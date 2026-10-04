@@ -319,6 +319,19 @@ function menuConnect() {
     ui.alert("주소 모양이 맞지 않아요. 'https://script.google.com/' 로 시작하고 '/exec' 로 끝나는 주소를 붙여넣어 주세요.");
     return;
   }
+  // 저장하기 전에 그 주소에 실제로 접속해 이 스크립트가 맞는지 확인한다. 틀린 주소는 적지 않는다.
+  if (!verifyUrl_(url)) {
+    ui.alert(
+      "연결 확인 실패",
+      "이 주소로 접속해 봤는데 사진 올리기 프로그램이 응답하지 않아요. 아래를 확인해 주세요.\n\n" +
+        "① [배포 → 배포 관리] 의 '웹 앱 URL' 을 [복사] 버튼으로 복사했나요? (주소창 주소가 아니라)\n" +
+        "② 그 배포의 '액세스 권한이 있는 사용자' 가 '모든 사용자' 인가요?\n" +
+        "③ 코드를 붙여넣고 저장한 뒤에 배포했나요? 아니라면 [배포 관리 → ✏️ → 버전: 새 버전 → 배포]\n\n" +
+        "확인 후 다시 [② 앱과 연결] 을 눌러 주세요. (시트에는 아무것도 저장하지 않았어요)",
+      ui.ButtonSet.OK,
+    );
+    return;
+  }
   // 앱이 읽을 수 있도록 '설정' 탭에 주소를 적는다. (주소는 공개돼도 괜찮다. 올리기에는 비밀번호가 필요하다)
   const ss = SpreadsheetApp.getActive();
   let sh = ss.getSheetByName(SETTINGS_SHEET);
@@ -334,11 +347,21 @@ function menuConnect() {
   const i = keys.indexOf(URL_KEY);
   sh.getRange(i >= 0 ? i + 2 : last + 1, 1, 1, 2).setValues([[URL_KEY, url]]);
   ui.alert(
-    "✅ 연결 완료!",
+    "✅ 연결 완료! (주소 확인됨)",
     "이제 앱 오른쪽 위 🔑 로 관리자 로그인을 하면 사진 메뉴에서 바로 사진을 올릴 수 있어요.\n" +
       "(앱을 껐다 켜거나 ↻ 를 누르면 🔑 버튼이 나타납니다)\n\n관리자: " + adminIds_().join(", "),
     ui.ButtonSet.OK,
   );
+}
+
+// 웹 앱 주소에 접속해 doGet 이 이 스크립트의 응답을 돌려주는지 본다.
+function verifyUrl_(url) {
+  try {
+    const res = UrlFetchApp.fetch(url, { followRedirects: true, muteHttpExceptions: true });
+    return res.getResponseCode() === 200 && res.getContentText().indexOf('"eduhope-photo-upload"') >= 0;
+  } catch (err) {
+    return false;
+  }
 }
 
 function menuAdmin() {
