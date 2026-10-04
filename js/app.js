@@ -1,6 +1,6 @@
 import * as data from "./data.js";
 import { SHEET_URL } from "./config.js";
-import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, JOIN, YOUTUBE_ID } from "./content.js";
+import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, JOIN, YOUTUBE_ID, CATEGORIES } from "./content.js";
 
 const $view = document.getElementById("view");
 const $account = document.getElementById("account");
@@ -17,6 +17,7 @@ const state = {
     return { year: t.getFullYear(), month: t.getMonth(), selected: ymd(t) };
   })(),
   donorQuery: "",
+  calFilter: new Set(), // 비어 있으면 모든 구분을 보여 준다
 };
 
 // ---------------------------------------------------------------
@@ -48,8 +49,15 @@ const byDateAsc = (a, b) => ((a.date || "") + (a.time || "")).localeCompare((b.d
 // 관리자로 로그인했으면 사진을 올리고 지울 수 있다. (다른 메뉴는 구글 시트에서 편집)
 const isAdmin = () => data.canUpload() && !!state.me;
 
+// 일정의 구분(색). 시트 '구분' 칸에 낱말이 들어 있으면 그 구분, 아니면 '그 외'.
+function catOf(e) {
+  const v = String(e.category || "").replace(/\s/g, "");
+  return CATEGORIES.find((c) => c.match.some((m) => v.includes(m))) || CATEGORIES[CATEGORIES.length - 1];
+}
+const shown = (e) => !state.calFilter.size || state.calFilter.has(catOf(e).key);
+
 function eventsOn(day) {
-  return state.db.events.filter((e) => e.date <= day && day <= (e.endDate || e.date)).sort(byDateAsc);
+  return state.db.events.filter((e) => e.date <= day && day <= (e.endDate || e.date) && shown(e)).sort(byDateAsc);
 }
 
 function normalize(d) {
@@ -111,8 +119,8 @@ const views = {
       const cls = ["cal-day", d.getMonth() !== month && "other", key === today && "today", key === selected && "selected", d.getDay() === 0 && "sun"].filter(Boolean).join(" ");
       cells += `<button class="${cls}" data-day="${key}" aria-label="${fmtDate(key)} 일정 ${evs.length}개">
         <span class="num">${d.getDate()}</span>
-        ${evs.slice(0, 2).map((e) => `<span class="cal-chip">${esc(e.title)}</span>`).join("")}
-        ${evs.length > 2 ? `<span class="cal-chip">+${evs.length - 2}</span>` : ""}
+        ${evs.slice(0, 2).map((e) => `<span class="cal-chip" style="background:${catOf(e).color}">${esc(e.title)}</span>`).join("")}
+        ${evs.length > 2 ? `<span class="cal-chip more">+${evs.length - 2}</span>` : ""}
       </button>`;
     }
     const dayEvents = eventsOn(selected);
@@ -126,6 +134,11 @@ const views = {
       <div class="cal-grid">
         ${[..."일월화수목금토"].map((d) => `<div class="cal-dow">${d}</div>`).join("")}
         ${cells}
+      </div>
+      <div class="cal-legend" aria-label="구분별로 보기">
+        ${CATEGORIES.map((c) => `<button class="legend ${state.calFilter.has(c.key) ? "on" : ""} ${state.calFilter.size && !state.calFilter.has(c.key) ? "off" : ""}" data-cat="${esc(c.key)}" aria-pressed="${state.calFilter.has(c.key)}">
+          <i style="background:${c.color}"></i>${esc(c.key)}</button>`).join("")}
+        ${state.calFilter.size ? `<button class="legend reset" data-cat="">전체 보기</button>` : ""}
       </div>
       <h3>${fmtDate(selected)}</h3>
       ${dayEvents.length ? dayEvents.map(eventCard).join("") : `<div class="card empty">이 날은 일정이 없습니다.</div>`}
@@ -299,7 +312,9 @@ function gallery(list) {
 
 function eventCard(e) {
   const when = e.endDate && e.endDate !== e.date ? `${fmtDate(e.date)} ~ ${fmtDate(e.endDate)}` : fmtDate(e.date);
-  return `<div class="card event">
+  const c = catOf(e);
+  return `<div class="card event" style="border-left-color:${c.color}">
+    <span class="cat-tag" style="background:${c.color}">${esc(c.key)}</span>
     <h4>${esc(e.title)}</h4>
     <div class="meta">🗓 ${when}${e.time ? ` · ⏰ ${esc(e.time)}` : ""}${e.place ? ` · 📍 ${esc(e.place)}` : ""}</div>
     ${e.memo ? `<div class="prewrap" style="margin-top:6px">${esc(e.memo)}</div>` : ""}
@@ -569,6 +584,14 @@ $view.addEventListener("click", (ev) => {
   if (!t) return;
   if (t.dataset.day) {
     state.cal.selected = t.dataset.day;
+    return render();
+  }
+  if (t.dataset.cat !== undefined) {
+    // 구분 범례: 누르면 그 구분만 보기 (여러 개 고를 수 있음), '전체 보기'로 해제
+    const k = t.dataset.cat;
+    if (!k) state.calFilter.clear();
+    else if (state.calFilter.has(k)) state.calFilter.delete(k);
+    else state.calFilter.add(k);
     return render();
   }
   if (t.dataset.photo) {

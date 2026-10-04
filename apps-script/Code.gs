@@ -22,6 +22,18 @@ const PHOTO_SHEET = "사진";
 const SETTINGS_SHEET = "설정";
 const URL_KEY = "사진 올리기 주소"; // 앱(js/data.js)이 이 이름으로 주소를 찾는다
 const MENU = "📷 기윤실 앱";
+
+// 캘린더 일정 구분과 색 (js/content.js 의 CATEGORIES 와 같게)
+const CAL_SHEET = "캘린더";
+const CATEGORIES = [
+  ["지역모임", "#f4cccc"],
+  ["전문모임", "#ffd966"],
+  ["실천연구소", "#93c47d"],
+  ["꿈섬·꿈틀", "#6d9eeb"],
+  ["번개", "#b4a7d6"],
+  ["전체·사무국", "#ffff00"],
+  ["그 외", "#b7e1cd"],
+];
 const PHOTO_HEADERS = ["사진 링크", "앨범", "설명", "날짜"];
 const FOLDER_NAME = "기윤실교사모임 사진";
 const SESSION_SECONDS = 6 * 60 * 60; // 로그인 유지 6시간
@@ -228,6 +240,7 @@ function setup() {
   folder.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
 
   photoSheet_();
+  setupCalendarColors_();
 
   let created = null;
   if (!adminIds_().length) {
@@ -254,6 +267,8 @@ function onOpen() {
     .createMenu(MENU)
     .addItem("① 설정 시작", "menuSetup")
     .addItem("② 앱과 연결", "menuConnect")
+    .addSeparator()
+    .addItem("캘린더 색 구분 넣기", "menuCalendarColors")
     .addSeparator()
     .addItem("관리자 추가·비밀번호 변경", "menuAdmin")
     .addItem("관리자 삭제", "menuRemoveAdmin")
@@ -352,6 +367,69 @@ function menuConnect() {
     "이제 앱 오른쪽 위 🔑 로 관리자 로그인을 하면 사진 메뉴에서 바로 사진을 올릴 수 있어요.\n" +
       "(앱을 껐다 켜거나 ↻ 를 누르면 🔑 버튼이 나타납니다)\n\n관리자: " + adminIds_().join(", "),
     ui.ButtonSet.OK,
+  );
+}
+
+// ---------------------------------------------------------------
+// 캘린더 색 구분: '구분' 칸(목록에서 고르기)을 만들고, 고른 구분에 따라 줄 전체에 색을 칠한다.
+// 여러 번 실행해도 안전하다. (칸은 한 번만 만들고, 색 규칙은 새로 정리해서 다시 건다)
+// ---------------------------------------------------------------
+function setupCalendarColors_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(CAL_SHEET);
+  if (!sh) return "'캘린더' 탭이 없어요.";
+  const width = Math.max(sh.getLastColumn(), 1);
+  const head = sh.getRange(1, 1, 1, width).getValues()[0].map((h) => String(h).trim());
+  let col = head.indexOf("구분") + 1;
+  let added = false;
+  if (!col) {
+    // '제목' 바로 뒤에 넣는다. (앱은 머리글 이름으로 칸을 찾으므로 위치가 바뀌어도 괜찮다)
+    const after = Math.max(head.indexOf("제목") + 1, 1);
+    sh.insertColumnAfter(after);
+    col = after + 1;
+    sh.getRange(1, col).setValue("구분").setFontWeight("bold").setBackground("#8fb174").setFontColor("#ffffff");
+    added = true;
+  }
+  const rows = Math.max(sh.getMaxRows() - 1, 1);
+  const lastCol = Math.max(sh.getLastColumn(), col);
+  sh.getRange(2, col, rows, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireValueInList(CATEGORIES.map((c) => c[0]), true).setAllowInvalid(true).build(),
+  );
+  // 예전에 이 기능이 건 색 규칙은 지우고 새로 건다. (사용자가 직접 만든 다른 규칙은 그대로)
+  const names = CATEGORIES.map((c) => c[0]);
+  const mine = (rule) => {
+    const cond = rule.getBooleanCondition && rule.getBooleanCondition();
+    const f = cond && cond.getCriteriaValues && String(cond.getCriteriaValues()[0] || "");
+    return !!f && names.some((n) => f.indexOf('"' + n + '"') >= 0 || f.indexOf("'" + n + "'") >= 0);
+  };
+  const keep = sh.getConditionalFormatRules().filter((r) => !mine(r));
+  const letter = sh.getRange(1, col).getA1Notation().replace(/\d+/g, "");
+  const range = sh.getRange(2, 1, rows, lastCol);
+  const rules = CATEGORIES.slice(0, -1).map(([name, color]) =>
+    SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(`=$${letter}2="${name}"`).setBackground(color).setRanges([range]).build(),
+  );
+  // 그 외: 제목은 있는데 구분이 위 목록에 없는 줄 (비어 있어도).
+  // 끝의 "그 외"="그 외" 는 항상 참인 표식으로, 다음에 다시 실행할 때 이 규칙을 알아보기 위한 것이다.
+  const titleCol = sh.getRange(1, 1, 1, lastCol).getValues()[0].map((h) => String(h).trim()).indexOf("제목") + 1 || 1;
+  const titleLetter = sh.getRange(1, titleCol).getA1Notation().replace(/\d+/g, "");
+  const others = names.slice(0, -1).map((n) => `$${letter}2<>"${n}"`).join(",");
+  rules.push(
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied(`=AND($${titleLetter}2<>"",${others},"그 외"="그 외")`)
+      .setBackground(CATEGORIES[CATEGORIES.length - 1][1])
+      .setRanges([range])
+      .build(),
+  );
+  sh.setConditionalFormatRules(keep.concat(rules));
+  return added ? "'캘린더' 탭에 '구분' 칸을 만들고 색 규칙을 넣었어요." : "'구분' 칸은 이미 있어요. 색 규칙을 다시 정리했어요.";
+}
+
+function menuCalendarColors() {
+  const msg = setupCalendarColors_();
+  SpreadsheetApp.getUi().alert(
+    "캘린더 색 구분",
+    msg + "\n\n'구분' 칸에서 목록을 골라 주세요: " + CATEGORIES.map((c) => c[0]).join(", ") +
+      "\n비워 두면 '그 외'(민트)로 보입니다. 앱 캘린더에도 같은 색으로 나와요.",
+    SpreadsheetApp.getUi().ButtonSet.OK,
   );
 }
 
