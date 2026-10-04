@@ -49,9 +49,10 @@ export const SHEET_URL = "https://docs.google.com/spreadsheets/d/xxxxxxxx/edit?u
 3. `앨범` 칸에 같은 이름을 쓰면 앱에서 앨범으로 묶여 보입니다.
 
 ### 5. 앱 주소 만들기 (GitHub Pages, 무료)
-1. 이 저장소 **Settings → Pages**: Source `Deploy from a branch`, Branch `main` / `/ (root)` → Save
-2. 1~2분 뒤 `https://<깃허브아이디>.github.io/eduhope/` 로 접속됩니다.
-3. 휴대폰에서 열고 **홈 화면에 추가** 하면 앱처럼 쓸 수 있습니다.
+1. 이 저장소 **Settings → Pages → Build and deployment → Source** 를 **GitHub Actions** 로 선택합니다. (처음 한 번만)
+2. 이후 `main` 브랜치에 변경이 올라올 때마다 자동으로 배포됩니다. (**Actions** 탭 → `앱 배포` 에서 진행 상황 확인, 수동 실행도 가능)
+3. 1~2분 뒤 `https://violetwizard-lim.github.io/eduhope/` 로 접속됩니다.
+4. 휴대폰에서 열고 **홈 화면에 추가** 하면 앱처럼 쓸 수 있습니다.
 
 ## 알아 둘 점
 

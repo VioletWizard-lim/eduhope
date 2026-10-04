@@ -1,0 +1,36 @@
+# main 브랜치에 변경이 올라오면 앱을 GitHub Pages 에 자동으로 배포한다.
+# 처음 한 번만: 저장소 Settings → Pages → Build and deployment → Source 를 "GitHub Actions" 로 선택.
+name: 앱 배포
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: 배포할 파일만 모으기
+        run: |
+          mkdir _site
+          cp -r index.html manifest.webmanifest sw.js .nojekyll css js icons _site/
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
