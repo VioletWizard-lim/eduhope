@@ -656,6 +656,36 @@ window.addEventListener("hashchange", () => {
   window.scrollTo(0, 0);
 });
 
+// 뒤로가기: 앱처럼 "홈 ← 지금 화면" 두 단계만 기록에 남긴다.
+//   다른 화면에서 뒤로가기 → 홈 / 홈에서 뒤로가기 → 앱 종료 (브라우저에서는 이전 사이트)
+function go(hash) {
+  const toHome = hash === "#/" || hash === "#";
+  if (toHome) {
+    if (route() === "home") return;
+    if (history.state?.sub) history.back(); // 기록상 바로 앞이 홈
+    else location.replace("#/");
+    return;
+  }
+  if (route() === "home") history.pushState({ sub: true }, "", hash);
+  else history.replaceState({ sub: true }, "", hash); // 화면끼리 옮겨 다녀도 기록이 쌓이지 않게
+  render();
+  window.scrollTo(0, 0);
+}
+
+document.addEventListener("click", (ev) => {
+  const a = ev.target.closest('a[href^="#"]');
+  if (!a || ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.shiftKey) return;
+  ev.preventDefault();
+  go(a.getAttribute("href"));
+});
+
+// 다른 화면 주소로 바로 열었을 때도 뒤로가기가 홈으로 가도록 홈을 앞에 끼워 둔다.
+if (route() !== "home") {
+  const here = location.hash;
+  history.replaceState(null, "", "#/");
+  history.pushState({ sub: true }, "", here);
+}
+
 // 다른 앱을 보다가 돌아오면 새 내용을 받아온다.
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && !$dialog.open) refresh();
