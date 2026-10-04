@@ -183,7 +183,7 @@ function previewData() {
 // ---------------------------------------------------------------
 // 시트 탭 이름과 머리글(1행) → 앱에서 쓰는 이름
 export const TABS = {
-  events: { name: "캘린더", cols: { 제목: "title", 시작일: "date", 날짜: "date", 종료일: "endDate", 시간: "time", 장소: "place", 메모: "memo" } },
+  events: { name: "캘린더", cols: { 제목: "title", 구분: "category", 분류: "category", 시작일: "date", 날짜: "date", 종료일: "endDate", 시간: "time", 장소: "place", 메모: "memo" } },
   prayers: { name: "기도문", cols: { 제목: "title", 날짜: "date", 내용: "body", 기도문: "body" } },
   newsletters: { name: "소식지", cols: { 제목: "title", 발행일: "date", 날짜: "date", 요약: "summary", 링크: "url" } },
   donors: { name: "후원자", cols: { 이름: "name", 구분: "type", 시작연도: "since" } },
@@ -282,9 +282,11 @@ function sample() {
     encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><rect width="400" height="400" fill="${bg}"/><text x="200" y="215" font-size="34" text-anchor="middle" fill="#fff" font-family="sans-serif">${label}</text></svg>`);
   return {
     events: [
-      { id: "e1", title: "정기 기도회 (예시)", date: d(2), time: "19:30", place: "온라인", memo: "" },
-      { id: "e2", title: "지역모임 대표자 회의 (예시)", date: d(9), time: "14:00", place: "(장소)", memo: "" },
-      { id: "e3", title: "교사 수련회 (예시)", date: d(20), endDate: d(21), time: "10:00", place: "(장소)", memo: "신청 마감 일주일 전" },
+      { id: "e1", title: "정기 기도회 (예시)", category: "전체·사무국", date: d(2), time: "19:30", place: "온라인", memo: "" },
+      { id: "e2", title: "강서 지역모임 (예시)", category: "지역모임", date: d(9), time: "19:00", place: "(장소)", memo: "" },
+      { id: "e4", title: "통일바람 모임 (예시)", category: "전문모임", date: d(9), time: "20:00", place: "온라인", memo: "" },
+      { id: "e5", title: "번개 모임 (예시)", category: "번개", date: d(12), time: "18:30", place: "(장소)", memo: "" },
+      { id: "e3", title: "교사 수련회 (예시)", category: "전체", date: d(20), endDate: d(21), time: "10:00", place: "(장소)", memo: "신청 마감 일주일 전" },
     ],
     prayers: [{ id: "p1", title: "학교를 위한 기도 (예시)", date: d(-3), body: "(예시 기도문입니다.)\n\n주님, 오늘도 교실에서 만나는 아이들을 주님의 눈으로 바라보게 하소서." }],
     newsletters: [{ id: "n1", title: "소식지 예시호", date: d(-10), summary: "실제 소식지 제목과 링크로 바꿔 주세요.", url: "" }],

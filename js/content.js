@@ -83,3 +83,16 @@ export const JOIN = {
   googleForm: "https://docs.google.com/forms/d/e/1FAIpQLScb18zuakIelvyTbSEM-P6Fm7smpnRyG8q-oevtQGn-VNXvrg/viewform",
   applicationFile: "https://drive.google.com/file/d/1HKW6GI1vkwabT2g-0jpa6mH0ewR4p6Jb/view",
 };
+
+// 캘린더 일정 구분과 색. 시트 '캘린더' 탭의 '구분' 칸 값으로 정한다.
+// match 의 낱말이 구분 칸에 들어 있으면 그 색이 된다. 비어 있거나 맞는 것이 없으면 마지막 '그 외'(민트).
+// 색을 바꾸면 apps-script/Code.gs 의 CATEGORIES 와 template 양식도 같게 맞출 것.
+export const CATEGORIES = [
+  { key: "지역모임", color: "#f4cccc", match: ["지역"] },
+  { key: "전문모임", color: "#ffd966", match: ["전문"] },
+  { key: "실천연구소", color: "#93c47d", match: ["실천", "연구소"] },
+  { key: "꿈섬·꿈틀", color: "#6d9eeb", match: ["꿈섬", "꿈틀"] },
+  { key: "번개", color: "#b4a7d6", match: ["번개"] },
+  { key: "전체·사무국", color: "#ffff00", match: ["전체", "사무국"] },
+  { key: "그 외", color: "#b7e1cd", match: [] },
+];
