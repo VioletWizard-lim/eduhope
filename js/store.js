@@ -3,19 +3,21 @@
 // 없으면 브라우저 localStorage 를 쓰는 "데모 모드"로 동작한다.
 // 화면 코드(app.js)는 어느 모드인지 몰라도 되도록 같은 함수를 제공한다.
 
-import { firebaseConfig } from "./firebase-config.js";
+import { firebaseConfig, ID_DOMAIN } from "./firebase-config.js";
 
 export const ROLES = {
   admin: "관리자",
   editor: "편집자",
+  calendar: "일정 담당",
   member: "회원",
   guest: "방문자",
 };
 
 // 역할별로 할 수 있는 일. Firestore 보안 규칙(firestore.rules)과 반드시 같게 유지할 것.
 const PERMISSIONS = {
-  "events.write": ["admin", "editor"],
+  "events.write": ["admin", "editor", "calendar"],
   "prayers.write": ["admin", "editor"],
+  "photos.write": ["admin", "editor"],
   "newsletters.write": ["admin"],
   "donors.read": ["admin", "member", "editor"],
   "donors.write": ["admin"],
@@ -27,7 +29,7 @@ export function can(role, action) {
 }
 
 const SDK = "https://www.gstatic.com/firebasejs/10.12.2";
-const COLLECTIONS = ["events", "prayers", "donors", "newsletters", "roles"];
+const COLLECTIONS = ["events", "prayers", "donors", "newsletters", "roles", "photos", "photoFiles"];
 
 let backend = null;
 export let mode = "demo";
@@ -45,13 +47,30 @@ export async function init() {
 
 export const onAuth = (cb) => backend.onAuth(cb);
 export const signIn = (...a) => backend.signIn(...a);
+// 아이디/비밀번호 로그인. "admin" 처럼 @ 없이 쓰면 admin@eduhope.app 으로 바꿔서 로그인한다.
+export const signInWithId = (id, password) => backend.signInWithId(idToEmail(id), password);
 export const signOut = () => backend.signOut();
 export const subscribe = (col, cb, onError) => backend.subscribe(col, cb, onError);
 export const add = (col, data) => backend.add(col, data);
 export const update = (col, id, data) => backend.update(col, id, data);
 export const remove = (col, id) => backend.remove(col, id);
-export const setRole = (email, role) => backend.setRole(normEmail(email), role);
+export const setRole = (email, role) => backend.setRole(normEmail(idToEmail(email)), role);
+// 사진은 목록용 작은 사진(photos)과 원본(photoFiles)을 따로 저장한다.
+// 목록을 열 때 원본까지 다 받지 않도록 하기 위함.
+export const addPhoto = (meta, full) => backend.addPhoto(meta, full);
+export const getPhotoFull = (id) => backend.getPhotoFull(id);
+export const removePhoto = (id) => backend.removePhoto(id);
 export const removeRole = (email) => backend.remove("roles", normEmail(email));
+
+export function idToEmail(id) {
+  const v = String(id || "").trim().toLowerCase();
+  return v && !v.includes("@") ? `${v}@${ID_DOMAIN}` : v;
+}
+
+// 로그인 아이디로 보여줄 이름 (admin@eduhope.app → admin)
+export function displayId(email) {
+  return String(email || "").replace(new RegExp(`@${ID_DOMAIN.replace(/\./g, "\\.")}$`), "");
+}
 
 function normEmail(email) {
   return String(email || "").trim().toLowerCase();
@@ -100,8 +119,28 @@ async function createFirebaseBackend() {
     signIn() {
       return authMod.signInWithPopup(auth, new authMod.GoogleAuthProvider());
     },
+    signInWithId(email, password) {
+      return authMod.signInWithEmailAndPassword(auth, email, password);
+    },
     signOut() {
       return authMod.signOut(auth);
+    },
+    async addPhoto(meta, full) {
+      const ref = fs.doc(fs.collection(db, "photos"));
+      const batch = fs.writeBatch(db);
+      batch.set(fs.doc(db, "photoFiles", ref.id), { data: full, ...stamp() });
+      batch.set(ref, { ...meta, ...stamp() });
+      await batch.commit();
+    },
+    async getPhotoFull(id) {
+      const snap = await fs.getDoc(fs.doc(db, "photoFiles", id));
+      return snap.exists() ? snap.data().data : null;
+    },
+    async removePhoto(id) {
+      const batch = fs.writeBatch(db);
+      batch.delete(fs.doc(db, "photos", id));
+      batch.delete(fs.doc(db, "photoFiles", id));
+      await batch.commit();
     },
     subscribe(col, cb, onError) {
       return fs.onSnapshot(
@@ -128,7 +167,7 @@ async function createFirebaseBackend() {
 // ---------------------------------------------------------------
 // 데모 모드 (설정 없이 바로 체험)
 // ---------------------------------------------------------------
-const DEMO_KEY = "eduhope-demo-v1";
+const DEMO_KEY = "eduhope-demo-v2";
 
 function createDemoBackend() {
   let state = load();
@@ -139,7 +178,7 @@ function createDemoBackend() {
   function load() {
     try {
       const raw = localStorage.getItem(DEMO_KEY);
-      if (raw) return JSON.parse(raw);
+      if (raw) return { photos: {}, photoFiles: {}, ...JSON.parse(raw) };
     } catch {}
     return seed();
   }
@@ -178,6 +217,33 @@ function createDemoBackend() {
       session = { email: normEmail(email), name: normEmail(email) };
       save();
       emitAuth();
+    },
+    async signInWithId(email) {
+      return this.signIn(email);
+    },
+    async addPhoto(meta, full) {
+      guard("photos", "write");
+      const id = Math.random().toString(36).slice(2, 10);
+      state.photoFiles[id] = { data: full };
+      state.photos[id] = { ...meta, ...stamp() };
+      try {
+        localStorage.setItem(DEMO_KEY, JSON.stringify({ ...state, session }));
+      } catch (e) {
+        delete state.photoFiles[id];
+        delete state.photos[id];
+        throw new Error("데모 모드 저장 공간이 가득 찼습니다. (실제 운영에서는 문제없습니다)");
+      }
+      emit("photos");
+    },
+    async getPhotoFull(id) {
+      return state.photoFiles[id]?.data || null;
+    },
+    async removePhoto(id) {
+      guard("photos", "write");
+      delete state.photos[id];
+      delete state.photoFiles[id];
+      save();
+      emit("photos");
     },
     async signOut() {
       session = null;
@@ -234,13 +300,16 @@ function seed() {
     t.setDate(t.getDate() + offset);
     return t.toISOString().slice(0, 10);
   };
-  const by = { updatedBy: "admin@example.com", updatedAt: new Date().toISOString() };
+  const by = { updatedBy: `admin@${ID_DOMAIN}`, updatedAt: new Date().toISOString() };
   return {
     session: null,
+    photos: {},
+    photoFiles: {},
     roles: {
-      "admin@example.com": { role: "admin", ...by },
-      "editor@example.com": { role: "editor", ...by },
-      "member@example.com": { role: "member", ...by },
+      [`admin@${ID_DOMAIN}`]: { role: "admin", ...by },
+      [`editor@${ID_DOMAIN}`]: { role: "editor", ...by },
+      [`calendar@${ID_DOMAIN}`]: { role: "calendar", ...by },
+      [`member@${ID_DOMAIN}`]: { role: "member", ...by },
     },
     events: {
       e1: { title: "정기 기도회", date: d(2), time: "19:30", place: "온라인(Zoom)", memo: "매월 첫째 주 기도회", ...by },

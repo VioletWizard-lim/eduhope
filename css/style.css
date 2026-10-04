@@ -123,7 +123,8 @@ h3::before { content: "🌿 "; }
   border: 3px solid var(--sage-strong); font-weight: 700; font-size: 17px;
   text-align: center; text-decoration: none; border-radius: 4px;
 }
-.link-btn.disabled { opacity: 0.55; pointer-events: none; }
+.cta-row { display: flex; justify-content: center; gap: 8px; margin: 12px 0 4px; flex-wrap: wrap; }
+.card.highlight { background: var(--surface-2); border-color: transparent; }
 
 /* ---------- 캘린더 ---------- */
 .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
@@ -193,14 +194,14 @@ table.roles td:first-child { word-break: break-all; }
 /* ---------- 하단 탭 ---------- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
-  display: grid; grid-template-columns: repeat(6, 1fr);
+  display: grid; grid-template-columns: repeat(7, 1fr);
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--surface); border-top: 1px solid var(--line);
 }
 .tabbar a {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
-  font-size: 12px; color: var(--muted); text-decoration: none; gap: 2px;
+  font-size: 11px; color: var(--muted); text-decoration: none; gap: 2px; white-space: nowrap;
 }
 .tabbar a .ico { font-size: 20px; line-height: 1; filter: grayscale(0.6); }
 .tabbar a.active { color: var(--sage-strong); font-weight: 700; }
@@ -212,3 +213,20 @@ table.roles td:first-child { word-break: break-all; }
   font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .2s; max-width: calc(100vw - 32px);
 }
 .toast.show { opacity: 1; }
+
+/* ---------- 사진 ---------- */
+.gallery { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+@media (min-width: 560px) { .gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.photo {
+  position: relative; padding: 0; border: none; cursor: pointer; aspect-ratio: 1;
+  border-radius: 8px; overflow: hidden; background: var(--surface-2);
+}
+.photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.photo span {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 4px 6px; font-size: 11px; text-align: left;
+  color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.6));
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.lightbox img { width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px; background: #000; }
+
+.divider { text-align: center; color: var(--muted); font-size: 13px; }

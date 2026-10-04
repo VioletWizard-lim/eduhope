@@ -1,6 +1,6 @@
 import * as store from "./store.js";
-import { ROLES, can } from "./store.js";
-import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS } from "./content.js";
+import { ROLES, can, displayId } from "./store.js";
+import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, JOIN } from "./content.js";
 
 const $view = document.getElementById("view");
 const $account = document.getElementById("account");
@@ -14,6 +14,7 @@ const state = {
   events: [],
   prayers: [],
   newsletters: [],
+  photos: [],
   donors: [],
   donorsError: null,
   roles: [],
@@ -43,7 +44,7 @@ function fmtStamp(row) {
   if (!row.updatedBy) return "";
   const t = row.updatedAt?.toDate ? row.updatedAt.toDate() : row.updatedAt ? new Date(row.updatedAt) : null;
   const when = t ? ` · ${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}` : "";
-  return `마지막 수정: ${row.updatedBy}${when}`;
+  return `마지막 수정: ${displayId(row.updatedBy)}${when}`;
 }
 function safeUrl(u) {
   return /^https?:\/\//i.test(u || "") ? u : "";
@@ -55,9 +56,13 @@ function toast(msg) {
   toast.t = setTimeout(() => $toast.classList.remove("show"), 2400);
 }
 function errMsg(e) {
+  if (/auth\/(invalid-credential|wrong-password|user-not-found|invalid-email)/.test(e?.code || "")) return "아이디 또는 비밀번호가 맞지 않습니다.";
+  if (e?.code === "auth/too-many-requests") return "시도가 너무 많습니다. 잠시 후 다시 해 주세요.";
+  if (e?.code === "auth/popup-closed-by-user") return "로그인을 취소했습니다.";
   if (e?.code === "permission-denied" || /permission/i.test(e?.message || "")) return "권한이 없습니다. 관리자에게 권한을 요청하세요.";
   return "오류가 발생했습니다: " + (e?.message || e);
 }
+const ROLE_CHOICES = ["admin", "editor", "calendar", "member"];
 const byDateDesc = (a, b) => (b.date || "").localeCompare(a.date || "");
 const byDateAsc = (a, b) => (a.date + (a.time || "")).localeCompare(b.date + (b.time || ""));
 
@@ -134,6 +139,10 @@ const views = {
         <h1>${esc(ORG.name)}</h1>
         <div class="tag">함께 · 기쁘게 · 용기 있게</div>
       </div>
+      <div class="cta-row">
+        <a class="btn primary" href="#/join">회원가입 안내</a>
+        <a class="btn" href="${esc(LINKS[0].url)}" target="_blank" rel="noopener">가보고 싶어요 ↗</a>
+      </div>
 
       <h3>다가오는 일정</h3>
       ${upcoming.length ? upcoming.map(eventCard).join("") : `<div class="card empty">예정된 일정이 없습니다.</div>`}
@@ -187,6 +196,23 @@ const views = {
         ${dayEvents.length ? dayEvents.map(eventCard).join("") : `<div class="card empty">이 날은 일정이 없습니다.</div>`}
       </div>
       ${editable ? "" : `<p class="notice">일정은 <b>편집자</b> 이상 권한이 있는 분만 추가·수정할 수 있어요. ${state.user ? "권한이 필요하면 관리자에게 요청해 주세요." : "로그인 후 관리자에게 권한을 요청해 주세요."}</p>`}
+    `;
+  },
+
+  photos() {
+    const editable = can(state.role, "photos.write");
+    const list = [...state.photos].sort((a, b) => (b.date || "").localeCompare(a.date || "") || String(b.updatedAt).localeCompare(String(a.updatedAt)));
+    return `
+      <div class="row">
+        <div class="section-title">📷 사진</div>
+        ${editable ? `<label class="btn primary small">+ 사진 올리기<input type="file" accept="image/*" multiple hidden data-act="upload" /></label>` : ""}
+      </div>
+      <div id="upload-status" class="meta"></div>
+      ${list.length ? `<div class="gallery">${list.map((p) => `
+        <button class="photo" data-photo="${esc(p.id)}" aria-label="${esc(p.caption || "사진")}">
+          <img src="${esc(p.thumb)}" alt="${esc(p.caption || "")}" loading="lazy" />
+          ${p.caption ? `<span>${esc(p.caption)}</span>` : ""}
+        </button>`).join("")}</div>` : `<div class="card empty">아직 사진이 없습니다.</div>`}
     `;
   },
 
@@ -271,38 +297,59 @@ const views = {
         <a href="tel:${ORG.phone.replace(/-/g, "")}"><b>${esc(ORG.phone)}</b></a>로 연락 부탁드립니다.</p>
 
       <h3>바로가기</h3>
-      ${LINKS.map((l) => {
-        const u = safeUrl(l.url);
-        return u
-          ? `<a class="link-btn" href="${esc(u)}" target="_blank" rel="noopener">${esc(l.label)} 👆</a>`
-          : `<span class="link-btn disabled" title="링크 준비 중">${esc(l.label)}</span>`;
-      }).join("")}
+      ${LINKS.filter((l) => l.url).map(linkButton).join("")}
       <p class="meta">원본 사이트: <a href="${ORG.site}" target="_blank" rel="noopener">${ORG.site}</a></p>
+    `;
+  },
+
+  join() {
+    return `
+      <div class="section-title">🕊️ 회원가입안내</div>
+      <p>${esc(JOIN.bylaw)}</p>
+      <div class="card highlight">
+        <b>| ${esc(JOIN.onePercentTitle)}</b>
+        <p style="margin:6px 0 0">${JOIN.onePercent.map(esc).join("<br>")}</p>
+      </div>
+
+      <a class="link-btn" href="${esc(JOIN.googleForm)}" target="_blank" rel="noopener">회원가입 구글 폼 작성 👆</a>
+      <p class="meta">* 구글 폼 신청서를 작성하시면 담당자와 통화 후 회원 가입(증액)이 완료됩니다.</p>
+
+      <h3>회비납부 신청 방법 (신청서)</h3>
+      <p>아래 회원가입신청서 작성 후, 스캔 또는 사진을 찍어 문자, 이메일 중 택하여 발송해주십시오.</p>
+      <div class="card">
+        📱 <a href="sms:${ORG.phone.replace(/-/g, "")}">${esc(ORG.phone)}</a> (문자)<br>
+        ✉️ <a href="mailto:${esc(ORG.email)}">${esc(ORG.email)}</a>
+      </div>
+      <a class="link-btn" href="${esc(JOIN.applicationFile)}" target="_blank" rel="noopener">회원가입신청서 내려받기 ⬇</a>
+      <p class="meta">신청서에는 신규회원가입신청서와 기존회원 증액 신청서가 함께 있습니다.<br>
+        * 후원신청서 원본은 '중요증빙자료'이니 꼭 보관 부탁드립니다.</p>
     `;
   },
 
   admin() {
     if (!can(state.role, "roles.manage")) return `<div class="notice">관리자만 볼 수 있는 화면입니다.</div>`;
     const rows = [...state.roles].sort((a, b) => a.id.localeCompare(b.id));
-    const opts = (cur) => ["admin", "editor", "member"].map((r) => `<option value="${r}" ${r === cur ? "selected" : ""}>${ROLES[r]}</option>`).join("");
+    const opts = (cur) => ROLE_CHOICES.map((r) => `<option value="${r}" ${r === cur ? "selected" : ""}>${ROLES[r]}</option>`).join("");
     return `
       <div class="section-title">🔑 권한 관리</div>
       <div class="notice">
         <b>관리자</b>: 모든 편집 + 권한 관리<br>
-        <b>편집자</b>: 캘린더·기도문 편집, 후원자 명단 보기<br>
+        <b>편집자</b>: 캘린더·기도문·사진 편집, 후원자 명단 보기<br>
+        <b>일정 담당</b>: 캘린더만 편집<br>
         <b>회원</b>: 후원자 명단 보기<br>
-        등록되지 않은 사람(<b>방문자</b>)은 캘린더·기도문·소식지를 보기만 할 수 있어요.<br>
-        로그인에 쓰는 <b>구글 이메일</b>로 등록해 주세요.
+        등록되지 않은 사람(<b>방문자</b>)은 캘린더·기도문·소식지·사진을 보기만 할 수 있어요.<br><br>
+        <b>아이디/비밀번호 계정</b>은 Firebase 콘솔에서 먼저 만든 뒤(README 참고) 여기에 <b>아이디</b>를 등록하세요.<br>
+        <b>구글 로그인</b>하는 분은 <b>구글 이메일</b>을 등록하면 됩니다.
       </div>
       <div class="row" style="margin:16px 0 8px">
         <span class="meta">등록된 사람 ${rows.length}명</span>
         <button class="btn primary small" data-act="add-role">+ 사람 추가</button>
       </div>
       <table class="roles">
-        <thead><tr><th>이메일</th><th>역할</th><th></th></tr></thead>
+        <thead><tr><th>아이디 / 이메일</th><th>역할</th><th></th></tr></thead>
         <tbody>
           ${rows.map((r) => `<tr>
-            <td>${esc(r.id)}${r.id === state.user?.email ? " (나)" : ""}</td>
+            <td>${esc(displayId(r.id))}${r.id === state.user?.email ? " (나)" : ""}</td>
             <td><select data-role-email="${esc(r.id)}" ${r.id === state.user?.email ? "disabled" : ""}>${opts(r.role)}</select></td>
             <td>${r.id === state.user?.email ? "" : `<button class="btn small danger" data-remove-role="${esc(r.id)}">삭제</button>`}</td>
           </tr>`).join("")}
@@ -311,6 +358,13 @@ const views = {
     `;
   },
 };
+
+function linkButton(l) {
+  const internal = l.url.startsWith("#/");
+  const href = internal ? l.url : safeUrl(l.url);
+  if (!href) return "";
+  return `<a class="link-btn" href="${esc(href)}" ${internal ? "" : 'target="_blank" rel="noopener"'}>${esc(l.label)} 👆</a>`;
+}
 
 function eventCard(e) {
   const editable = can(state.role, "events.write");
@@ -424,18 +478,19 @@ $view.addEventListener("click", (ev) => {
       return openForm({
         title: "사람 추가",
         fields: [
-          { name: "email", label: "구글 이메일", type: "email", required: true },
-          { name: "role", label: "역할", type: "select", options: [["editor", "편집자"], ["member", "회원"], ["admin", "관리자"]], default: "editor" },
+          { name: "email", label: "아이디 (예: calendar) 또는 구글 이메일", required: true, placeholder: "calendar" },
+          { name: "role", label: "역할", type: "select", options: ROLE_CHOICES.map((r) => [r, ROLES[r]]), default: "calendar" },
         ],
         onSubmit: (d) => store.setRole(d.email, d.role),
       });
   }
+  if (t.dataset.photo) return openPhoto(find(state.photos, t.dataset.photo));
   if (t.dataset.editEvent) return editor("events", EVENT_FIELDS, "일정", find(state.events, t.dataset.editEvent));
   if (t.dataset.editPrayer) return editor("prayers", PRAYER_FIELDS, "기도문", find(state.prayers, t.dataset.editPrayer));
   if (t.dataset.editNews) return editor("newsletters", NEWS_FIELDS, "소식지", find(state.newsletters, t.dataset.editNews));
   if (t.dataset.editDonor) return editor("donors", DONOR_FIELDS, "후원자", find(state.donors, t.dataset.editDonor));
   if (t.dataset.removeRole) {
-    if (!confirm(`${t.dataset.removeRole} 의 권한을 삭제할까요?`)) return;
+    if (!confirm(`${displayId(t.dataset.removeRole)} 의 권한을 삭제할까요?`)) return;
     store.removeRole(t.dataset.removeRole).then(() => toast("삭제했습니다."), (e) => toast(errMsg(e)));
   }
 });
@@ -443,6 +498,10 @@ $view.addEventListener("click", (ev) => {
 $view.addEventListener("change", (ev) => {
   const email = ev.target.dataset.roleEmail;
   if (email) store.setRole(email, ev.target.value).then(() => toast("역할을 바꿨습니다."), (e) => toast(errMsg(e)));
+});
+
+$view.addEventListener("change", (ev) => {
+  if (ev.target.dataset.act === "upload") uploadPhotos([...ev.target.files]);
 });
 
 $view.addEventListener("input", (ev) => {
@@ -456,6 +515,79 @@ $view.addEventListener("input", (ev) => {
 });
 
 // ---------------------------------------------------------------
+// 사진
+// ---------------------------------------------------------------
+// 휴대폰 사진은 수 MB 라서 그대로 올리면 무료 저장 한도(문서당 1MB)를 넘는다.
+// 브라우저에서 크기를 줄여 JPEG 로 바꾼 뒤 저장한다.
+async function shrink(file, maxSide, maxChars) {
+  const img = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(img.width * scale);
+  canvas.height = Math.round(img.height * scale);
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+  for (let q = 0.85; q >= 0.4; q -= 0.1) {
+    const url = canvas.toDataURL("image/jpeg", q);
+    if (url.length <= maxChars) return url;
+  }
+  if (maxSide > 600) return shrink(file, Math.round(maxSide * 0.75), maxChars);
+  throw new Error("사진을 줄이지 못했습니다.");
+}
+
+async function uploadPhotos(files) {
+  if (!files.length) return;
+  const caption = files.length === 1 ? prompt("사진 설명 (비워도 됩니다)", "") : prompt(`사진 ${files.length}장의 공통 설명 (비워도 됩니다)`, "");
+  if (caption === null) return render();
+  const status = () => $view.querySelector("#upload-status");
+  let done = 0;
+  for (const f of files) {
+    if (status()) status().textContent = `올리는 중… (${done + 1}/${files.length})`;
+    try {
+      const [thumb, full] = await Promise.all([shrink(f, 480, 120_000), shrink(f, 1600, 900_000)]);
+      await store.addPhoto({ caption: caption.trim(), date: ymd(new Date()), thumb }, full);
+      done++;
+    } catch (e) {
+      toast(`${f.name}: ${errMsg(e)}`);
+    }
+  }
+  toast(`사진 ${done}장을 올렸습니다.`);
+  render();
+}
+
+async function openPhoto(p) {
+  if (!p) return;
+  const editable = can(state.role, "photos.write");
+  $dialog.innerHTML = `
+    <form method="dialog" class="lightbox">
+      <img src="${esc(p.thumb)}" alt="${esc(p.caption || "")}" />
+      ${p.caption ? `<div>${esc(p.caption)}</div>` : ""}
+      <div class="meta">${fmtDate(p.date)}${editable ? ` · ${esc(fmtStamp(p))}` : ""}</div>
+      <div class="actions">
+        ${editable ? `<button type="button" class="btn danger" data-act="del" style="margin-right:auto">삭제</button>` : ""}
+        <button type="submit" class="btn">닫기</button>
+      </div>
+    </form>`;
+  $dialog.showModal();
+  const del = $dialog.querySelector('[data-act="del"]');
+  if (del)
+    del.onclick = async () => {
+      if (!confirm("이 사진을 삭제할까요?")) return;
+      try {
+        await store.removePhoto(p.id);
+        $dialog.close();
+        toast("삭제했습니다.");
+      } catch (e) {
+        toast(errMsg(e));
+      }
+    };
+  try {
+    const full = await store.getPhotoFull(p.id);
+    const img = $dialog.querySelector(".lightbox img");
+    if (full && img) img.src = full;
+  } catch {}
+}
+
+// ---------------------------------------------------------------
 // 로그인 / 계정 표시
 // ---------------------------------------------------------------
 function renderAccount() {
@@ -465,31 +597,41 @@ function renderAccount() {
     return;
   }
   $account.innerHTML = `
-    <span class="who" title="${esc(state.user.email)}">${esc(state.user.name)} · ${ROLES[state.role]}</span>
+    <span class="who" title="${esc(state.user.email)}">${esc(displayId(state.user.name))} · ${ROLES[state.role]}</span>
     ${can(state.role, "roles.manage") ? `<a class="btn small" href="#/admin">권한</a>` : ""}
     <button class="btn small" id="logout">로그아웃</button>`;
   $account.querySelector("#logout").onclick = () => store.signOut();
 }
 
 function login() {
-  if (store.mode === "firebase") {
-    store.signIn().catch((e) => toast(errMsg(e)));
-    return;
-  }
-  openForm({
-    title: "데모 로그인",
-    submitLabel: "로그인",
-    fields: [{
-      name: "email", label: "체험할 계정", type: "select", default: "editor@example.com",
-      options: [
-        ["admin@example.com", "admin@example.com (관리자)"],
-        ["editor@example.com", "editor@example.com (편집자)"],
-        ["member@example.com", "member@example.com (회원)"],
-        ["guest@example.com", "guest@example.com (등록 안 된 사람)"],
-      ],
-    }],
-    onSubmit: (d) => store.signIn(d.email),
-  });
+  const demo = store.mode === "demo";
+  $dialog.innerHTML = `
+    <form method="dialog" autocomplete="on">
+      <h2>로그인</h2>
+      ${demo ? `<p class="notice">데모 아이디: <b>admin</b>(관리자), <b>editor</b>(편집자), <b>calendar</b>(일정 담당), <b>member</b>(회원), <b>guest</b>(미등록) — 비밀번호는 아무거나</p>` : ""}
+      <label class="field">아이디<input name="id" required autocomplete="username" autocapitalize="off" /></label>
+      <label class="field">비밀번호<input name="pw" type="password" required autocomplete="current-password" /></label>
+      <div class="actions">
+        <button type="button" class="btn" data-act="cancel">취소</button>
+        <button type="submit" class="btn primary">로그인</button>
+      </div>
+      ${demo ? "" : `<div class="divider">또는</div>
+      <button type="button" class="btn" data-act="google">구글 계정으로 로그인</button>`}
+    </form>`;
+  const form = $dialog.querySelector("form");
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    try {
+      await store.signInWithId(form.id.value, form.pw.value);
+      $dialog.close();
+    } catch (e) {
+      toast(errMsg(e));
+    }
+  };
+  form.querySelector('[data-act="cancel"]').onclick = () => $dialog.close();
+  const g = form.querySelector('[data-act="google"]');
+  if (g) g.onclick = () => store.signIn().then(() => $dialog.close(), (e) => toast(errMsg(e)));
+  $dialog.showModal();
 }
 
 // ---------------------------------------------------------------
@@ -529,7 +671,8 @@ function route() {
 function render() {
   const r = route();
   $view.innerHTML = views[r]();
-  document.querySelectorAll(".tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.route === r));
+  const tab = r === "join" ? "about" : r;
+  document.querySelectorAll(".tabbar a").forEach((a) => a.classList.toggle("active", a.dataset.route === tab));
   renderAccount();
 }
 
@@ -550,6 +693,7 @@ window.addEventListener("hashchange", () => {
   sub("events", true);
   sub("prayers", true);
   sub("newsletters", true);
+  sub("photos", true);
   store.onAuth(({ user, role }) => {
     state.user = user;
     state.role = role;

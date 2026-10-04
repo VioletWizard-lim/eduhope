@@ -13,3 +13,8 @@ export const firebaseConfig = {
   messagingSenderId: "",
   appId: "",
 };
+
+// 아이디/비밀번호 로그인용 도메인.
+// 아이디 "admin" 은 Firebase 에서 "admin@eduhope.app" 계정으로 만든다. (실제 메일 주소가 아니어도 된다)
+// 이 값을 바꾸면 firestore.rules 의 ID_DOMAIN 부분도 같이 바꿀 것.
+export const ID_DOMAIN = "eduhope.app";

@@ -18,6 +18,7 @@ export const ORG = {
     "교육계 전체를 품고 그 회복을 위해 힘쓰는 헌신된 교육운동가",
   ],
   phone: "010-8381-1992",
+  email: "eduhope1992@naver.com",
   site: "https://sites.google.com/view/eduhope2024",
 };
 
@@ -55,11 +56,27 @@ export const SPECIAL_GROUPS = [
   "비전코디",
 ];
 
-// 사이트의 바로가기 버튼들. 실제 주소를 url 에 넣으면 버튼이 활성화된다.
+// 사이트의 바로가기 버튼들. url 이 비어 있으면 버튼을 숨긴다.
+// "#/" 로 시작하면 앱 안의 화면으로 이동한다.
 export const LINKS = [
-  { label: "기윤실교사모임 가보고 싶어요", url: "" },
-  { label: "모임 활동 소식 (네이버 카페 가입)", url: "" },
-  { label: "회원 가입 안내", url: "" },
+  { label: "기윤실교사모임 가보고 싶어요", url: "https://docs.google.com/forms/d/e/1FAIpQLSdrdEePXdIANcro76an9vAiJzvpUa8gneEdYfJdNWAEHte4OA/viewform" },
+  { label: "모임 활동 소식 (네이버 카페 가입)", url: "https://cafe.naver.com/eduhope1992" },
+  { label: "회원 가입 안내", url: "#/join" },
   { label: "기윤실교사모임에 오신 선생님을 환영합니다! (환영 게시판)", url: "" },
   { label: "선업튀 \"선생님 업고 튀어\" 영상 (YouTube)", url: "" },
 ];
+
+// 회원가입 안내
+export const JOIN = {
+  bylaw:
+    "기독교윤리실천운동 교사모임 정관 제4조에 “기윤실 회원은 우리 단체의 활동 목적에 동의하고 회비를 납부해야 한다”라고 " +
+    "명시되어 있습니다. 활동에 대한 관심과 조속한 회비납부 신청은 기윤실교사모임에 밑거름이 될 것입니다.",
+  onePercentTitle: "기윤실교사모임, 1% 나눔 운동",
+  onePercent: [
+    "자기 월급의 1%를 우리 모임의 회비로 내는 ‘1% 나눔 운동’을 시작합니다.",
+    "선생님께서 나눠주시는 1%의 회비는 황폐한 교육의 밭에 한 알의 겨자씨가 될 것입니다.",
+    "푸른 의의 나무가 가득한 세상, 선생님과 함께 만들고 싶습니다.",
+  ],
+  googleForm: "https://docs.google.com/forms/d/e/1FAIpQLScb18zuakIelvyTbSEM-P6Fm7smpnRyG8q-oevtQGn-VNXvrg/viewform",
+  applicationFile: "https://drive.google.com/file/d/1HKW6GI1vkwabT2g-0jpa6mH0ewR4p6Jb/view",
+};
