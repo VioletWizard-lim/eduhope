@@ -40,6 +40,11 @@ export function cached() {
 const URL_KEY = "사진 올리기 주소";
 const URL_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
 let latest = cached();
+export const CONNECT_HELP =
+  "사진 올리기 연결에 문제가 있어요. 시트 주인이 확인해 주세요: " +
+  "① 시트 '설정' 탭의 주소가 Apps Script [배포 → 배포 관리]의 '웹 앱 URL'과 똑같은지 " +
+  "② 배포의 액세스 권한이 '모든 사용자'인지 " +
+  "③ 코드를 고쳤다면 [배포 관리 → ✏️ → 새 버전]으로 다시 배포했는지";
 function uploadUrl() {
   if (UPLOAD_URL) return UPLOAD_URL;
   const v = (latest?.settings || []).find((r) => r.key === URL_KEY)?.value || "";
@@ -90,9 +95,15 @@ async function post(req) {
     // text/plain 으로 보내야 브라우저가 사전 확인(CORS preflight) 없이 바로 보낸다.
     const url = uploadUrl();
     if (!url) throw new Error("사진 올리기가 아직 연결되지 않았습니다.");
-    const res = await fetch(url, { method: "POST", body: JSON.stringify(body) });
-    if (!res.ok) throw new Error(`사진 서버 응답 오류 (${res.status})`);
-    out = await res.json();
+    // 주소가 틀렸거나(배포 주소가 아닌 경우) 배포 설정이 잘못되면 구글이 JSON 대신 오류 화면을 돌려준다.
+    // 그때는 무엇을 확인해야 하는지 알려 준다.
+    let res;
+    try {
+      res = await fetch(url, { method: "POST", body: JSON.stringify(body) });
+      out = await res.json();
+    } catch {
+      throw new Error(navigator.onLine === false ? "인터넷 연결을 확인해 주세요." : CONNECT_HELP);
+    }
   }
   if (!out.ok) {
     if (out.code === "auth") set(SESSION_KEY, null);
