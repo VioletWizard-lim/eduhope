@@ -485,15 +485,37 @@ function openPhoto(p, list = [p]) {
       </div>
       <div class="lb-caption"></div>
       <div class="meta lb-meta"></div>
+      <div class="meta lb-hint">사진을 누르면 확대돼요. 확대한 뒤에는 끌어서 둘러볼 수 있어요.</div>
       <a class="lb-orig meta" target="_blank" rel="noopener" hidden>원본 보기·내려받기 ↗</a>
       <div class="actions">
         ${editable ? `<button type="button" class="btn danger" data-act="del" style="margin-right:auto">삭제</button>` : ""}
         <button type="submit" class="btn">닫기</button>
       </div>
     </form>`;
-  const img = $dialog.querySelector(".lb-stage img");
+  const stage = $dialog.querySelector(".lb-stage");
+  const img = stage.querySelector("img");
+  // 확대: 원본 크기로 보여 주고, 누른 곳이 가운데 오도록 스크롤한다. 다시 누르면 화면에 맞춤.
+  const zoom = (on, ev) => {
+    stage.classList.toggle("zoomed", on);
+    if (!on) return;
+    const cur = list[i];
+    const fx = ev ? ev.offsetX / img.clientWidth : 0.5;
+    const fy = ev ? ev.offsetY / img.clientHeight : 0.5;
+    const center = () => {
+      stage.scrollLeft = img.clientWidth * fx - stage.clientWidth / 2;
+      stage.scrollTop = img.clientHeight * fy - stage.clientHeight / 2;
+    };
+    const big = data.photoUrl(cur.id, 4000);
+    if (img.src !== big) {
+      img.addEventListener("load", center, { once: true });
+      img.src = big;
+    }
+    center();
+  };
+  img.addEventListener("click", (ev) => zoom(!stage.classList.contains("zoomed"), ev));
   const show = () => {
     const cur = list[i];
+    stage.classList.remove("zoomed");
     img.src = data.photoUrl(cur.id, 2400);
     const orig = $dialog.querySelector(".lb-orig");
     const driveLink = /^[\w-]{20,}$/.test(cur.id) ? `https://drive.google.com/file/d/${encodeURIComponent(cur.id)}/view` : "";
@@ -511,7 +533,7 @@ function openPhoto(p, list = [p]) {
   let x0 = null;
   img.addEventListener("touchstart", (e) => (x0 = e.touches[0].clientX), { passive: true });
   img.addEventListener("touchend", (e) => {
-    if (x0 === null || list.length < 2) return;
+    if (x0 === null || list.length < 2 || stage.classList.contains("zoomed")) return;
     const dx = e.changedTouches[0].clientX - x0;
     if (Math.abs(dx) > 40) step(dx < 0 ? 1 : -1);
     x0 = null;
@@ -521,6 +543,8 @@ function openPhoto(p, list = [p]) {
     if (e.key === "ArrowRight") step(1);
   };
   show();
+  $dialog.classList.add("photo-dialog");
+  $dialog.addEventListener("close", () => $dialog.classList.remove("photo-dialog"), { once: true });
   $dialog.showModal();
   const del = $dialog.querySelector('[data-act="del"]');
   if (del)
