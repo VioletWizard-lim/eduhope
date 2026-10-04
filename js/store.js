@@ -244,7 +244,7 @@ function seed() {
     },
     events: {
       e1: { title: "정기 기도회", date: d(2), time: "19:30", place: "온라인(Zoom)", memo: "매월 첫째 주 기도회", ...by },
-      e2: { title: "지역모임 대표자 회의", date: d(9), time: "14:00", place: "기윤실 사무실", memo: "", ...by },
+      e2: { title: "지역모임 대표자 회의", date: d(9), time: "14:00", place: "(장소 입력)", memo: "", ...by },
       e3: { title: "교사 수련회", date: d(20), endDate: d(21), time: "10:00", place: "(장소 입력)", memo: "신청 마감 일주일 전", ...by },
     },
     prayers: {
