@@ -1,0 +1,11 @@
+{
+  "name": "기윤실교사모임",
+  "short_name": "기윤실교사",
+  "description": "교육의 길이 되는 기윤실교사모임: 함께 기쁘게 용기 있게",
+  "lang": "ko",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f7f5f0",
+  "theme_color": "#8fb174",
+  "icons": [{ "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
