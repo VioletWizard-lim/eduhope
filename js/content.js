@@ -62,9 +62,12 @@ export const LINKS = [
   { label: "기윤실교사모임 가보고 싶어요", url: "https://docs.google.com/forms/d/e/1FAIpQLSdrdEePXdIANcro76an9vAiJzvpUa8gneEdYfJdNWAEHte4OA/viewform" },
   { label: "모임 활동 소식 (네이버 카페 가입)", url: "https://cafe.naver.com/eduhope1992" },
   { label: "회원 가입 안내", url: "#/join" },
-  { label: "기윤실교사모임에 오신 선생님을 환영합니다! (환영 게시판)", url: "" },
-  { label: "선업튀 \"선생님 업고 튀어\" 영상 (YouTube)", url: "" },
+  { label: "기윤실교사모임에 오신 선생님을 환영합니다! (환영 게시판)", url: "https://padlet.com/eduhope1992/padlet-ub9bf0fdnv37hysp" },
+  { label: "선업튀 \"선생님 업고 튀어\" 영상 (YouTube)", url: "https://youtu.be/sBQ-WjGYvF0" },
 ];
+
+// 소개 화면에 넣는 유튜브 영상 ID
+export const YOUTUBE_ID = "sBQ-WjGYvF0";
 
 // 회원가입 안내
 export const JOIN = {
