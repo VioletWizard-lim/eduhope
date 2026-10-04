@@ -46,7 +46,7 @@ function toast(msg) {
 const byDateDesc = (a, b) => (b.date || "").localeCompare(a.date || "");
 const byDateAsc = (a, b) => ((a.date || "") + (a.time || "")).localeCompare((b.date || "") + (b.time || ""));
 // 관리자로 로그인했으면 사진을 올리고 지울 수 있다. (다른 메뉴는 구글 시트에서 편집)
-const isAdmin = () => data.canUpload && !!state.me;
+const isAdmin = () => data.canUpload() && !!state.me;
 
 function eventsOn(day) {
   return state.db.events.filter((e) => e.date <= day && day <= (e.endDate || e.date)).sort(byDateAsc);
@@ -557,7 +557,7 @@ function renderHeader() {
       render();
     };
   } else {
-    $account.innerHTML = `${refreshBtn}${sheetBtn}${data.canUpload ? `<button class="btn small" id="login" aria-label="관리자 로그인">🔑</button>` : ""}`;
+    $account.innerHTML = `${refreshBtn}${sheetBtn}${data.canUpload() ? `<button class="btn small" id="login" aria-label="관리자 로그인">🔑</button>` : ""}`;
     $account.querySelector("#login")?.addEventListener("click", login);
   }
   $account.querySelector("#refresh").onclick = refresh;

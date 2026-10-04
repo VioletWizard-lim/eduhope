@@ -4,24 +4,23 @@
  * 앱의 다른 메뉴(캘린더·기도문 등)는 시트 링크로 읽기만 하므로 이 스크립트와 관계없습니다.
  * 이 스크립트는 "관리자가 앱에서 사진을 올리고 지우는 일" 하나만 합니다.
  *   1) 관리자 아이디/비밀번호 확인
- *   2) 사진을 구글 드라이브 사진 폴더(앨범 이름의 하위 폴더)에 저장
+ *   2) 사진을 구글 드라이브 사진 폴더(사진첩 이름의 하위 폴더)에 저장
  *   3) 시트 '사진' 탭에 한 줄 추가 → 앱 사진첩에 나타남
  *
  * ※ 시트는 링크가 있는 누구나 볼 수 있으므로, 비밀번호는 시트가 아니라
- *    "스크립트 속성"(프로젝트 설정 → 스크립트 속성)에 보관합니다.
+ *    "스크립트 속성"에 보관합니다. (시트 메뉴 📷 기윤실 앱 → 관리자 추가·비밀번호 변경)
  *
- * 설치 (README 의 "관리자 사진 올리기 설정" 참고)
- *   1) 시트 메뉴 [확장 프로그램 → Apps Script] 에 이 파일 내용을 붙여넣고 저장
- *   2) 함수 목록에서 setup 선택 → [실행] → 권한 허용
- *      → 실행 로그에 관리자 아이디/비밀번호가 표시됩니다.
- *   3) [배포 → 새 배포 → 웹 앱] 실행 계정 "나", 액세스 "모든 사용자" → 배포
- *   4) 웹 앱 URL 을 앱의 js/config.js 의 UPLOAD_URL 에 붙여넣기
- *
- * 관리자 추가/비밀번호 변경: 프로젝트 설정 → 스크립트 속성
- *   속성 이름 user_아이디 (예: user_admin, user_kim), 값 = 비밀번호
+ * 설치
+ *   1) 시트 메뉴 [확장 프로그램 → Apps Script] 에 이 파일 내용을 붙여넣고 저장(💾)
+ *   2) 시트 탭으로 돌아가 새로고침 → 위쪽에 생긴 [📷 기윤실 앱 → ① 설정 시작] → 권한 허용
+ *   3) 팝업 안내대로 [배포 → 새 배포 → 웹 앱] (실행 계정: 나 / 액세스: 모든 사용자)
+ *   4) 시트 메뉴 [📷 기윤실 앱 → ② 앱과 연결] → 끝 (앱이 시트에서 주소를 읽어 갑니다)
  */
 
 const PHOTO_SHEET = "사진";
+const SETTINGS_SHEET = "설정";
+const URL_KEY = "사진 올리기 주소"; // 앱(js/data.js)이 이 이름으로 주소를 찾는다
+const MENU = "📷 기윤실 앱";
 const PHOTO_HEADERS = ["사진 링크", "앨범", "설명", "날짜"];
 const FOLDER_NAME = "기윤실교사모임 사진";
 const SESSION_SECONDS = 6 * 60 * 60; // 로그인 유지 6시간
@@ -229,15 +228,147 @@ function setup() {
 
   photoSheet_();
 
-  const hasAdmin = Object.keys(p.getProperties()).some((k) => k.indexOf("user_") === 0);
-  let msg = "사진 폴더: " + folder.getUrl();
-  if (!hasAdmin) {
-    const pw = Utilities.getUuid().replace(/-/g, "").slice(0, 10);
-    p.setProperty("user_admin", pw);
-    msg += "\n관리자 아이디: admin\n비밀번호: " + pw + "\n(프로젝트 설정 → 스크립트 속성에서 바꿀 수 있습니다)";
-  } else {
-    msg += "\n관리자 계정은 이미 있습니다. (프로젝트 설정 → 스크립트 속성의 user_ 로 시작하는 항목)";
+  let created = null;
+  if (!adminIds_().length) {
+    created = { id: "admin", pw: Utilities.getUuid().replace(/-/g, "").slice(0, 10) };
+    p.setProperty("user_admin", created.pw);
   }
+  const msg = "사진 폴더: " + folder.getUrl() + (created ? "\n관리자 아이디: admin\n비밀번호: " + created.pw : "\n관리자 계정은 이미 있습니다.");
   console.log(msg);
-  return msg;
+  return { msg: msg, folderUrl: folder.getUrl(), created: created, admins: adminIds_() };
+}
+
+function adminIds_() {
+  return Object.keys(props().getProperties())
+    .filter((k) => k.toLowerCase().indexOf("user_") === 0)
+    .map((k) => k.slice(5).toLowerCase())
+    .sort();
+}
+
+// ---------------------------------------------------------------
+// 시트 메뉴 — 시트를 열면 위쪽에 "📷 기윤실 앱" 메뉴가 생긴다.
+// ---------------------------------------------------------------
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu(MENU)
+    .addItem("① 설정 시작", "menuSetup")
+    .addItem("② 앱과 연결", "menuConnect")
+    .addSeparator()
+    .addItem("관리자 추가·비밀번호 변경", "menuAdmin")
+    .addToUi();
+}
+
+const esc_ = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function menuSetup() {
+  const r = setup();
+  const account = r.created
+    ? `<div class="box"><b>관리자 아이디</b> <code>${esc_(r.created.id)}</code><br><b>비밀번호</b> <code>${esc_(r.created.pw)}</code>
+       <p class="warn">이 비밀번호를 꼭 적어 두세요. 나중에 메뉴 [관리자 추가·비밀번호 변경]에서 바꿀 수 있어요.</p></div>`
+    : `<div class="box">관리자 계정이 이미 있어요: <b>${r.admins.map(esc_).join(", ")}</b><br>
+       비밀번호를 잊었으면 메뉴 [관리자 추가·비밀번호 변경]에서 새로 정하세요.</div>`;
+  const html = `
+    <style>
+      body{font-family:sans-serif;font-size:14px;line-height:1.6;color:#2d2a26}
+      h3{color:#5f8546;margin:12px 0 6px} code{background:#eef2e8;padding:2px 6px;border-radius:4px;font-size:15px}
+      .box{background:#f7f5f0;border:1px solid #e2ddd3;border-radius:8px;padding:10px 12px}
+      .warn{color:#c4392b;margin:6px 0 0} ol{padding-left:20px;margin:6px 0} li{margin:4px 0}
+      .k{background:#8fb174;color:#fff;border-radius:4px;padding:1px 6px;white-space:nowrap}
+    </style>
+    <h3>✅ 1단계 완료</h3>
+    ${account}
+    <p>사진 폴더도 만들었어요: <a href="${esc_(r.folderUrl)}" target="_blank">기윤실교사모임 사진</a></p>
+    <h3>2단계: 배포하기 (한 번만)</h3>
+    <ol>
+      <li>메뉴 <span class="k">확장 프로그램</span> → <span class="k">Apps Script</span></li>
+      <li>오른쪽 위 파란 버튼 <span class="k">배포</span> → <span class="k">새 배포</span></li>
+      <li>왼쪽 ⚙ 톱니바퀴 → <span class="k">웹 앱</span> 선택</li>
+      <li>실행 계정 <b>나</b> / 액세스 권한 <b>모든 사용자</b> → <span class="k">배포</span></li>
+    </ol>
+    <h3>3단계: 연결하기</h3>
+    <p>시트로 돌아와 메뉴 <span class="k">${MENU}</span> → <span class="k">② 앱과 연결</span> 을 누르면 끝이에요.</p>`;
+  SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(460).setHeight(560), "기윤실 앱 사진 올리기 설정");
+}
+
+const URL_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
+
+function menuConnect() {
+  const ui = SpreadsheetApp.getUi();
+  if (!props().getProperty("PHOTO_FOLDER_ID")) {
+    ui.alert("먼저 [" + MENU + " → ① 설정 시작] 을 해 주세요.");
+    return;
+  }
+  let url = "";
+  try {
+    url = ScriptApp.getService().getUrl() || "";
+  } catch (err) {
+    url = "";
+  }
+  if (!URL_RE.test(url)) {
+    const res = ui.prompt(
+      "앱과 연결",
+      "배포가 끝나면 나오는 '웹 앱 URL'(https://script.google.com/macros/s/.../exec)을 붙여넣어 주세요.\n" +
+        "아직 배포하지 않았다면 [취소] 후 [① 설정 시작] 안내의 2단계를 먼저 해 주세요.",
+      ui.ButtonSet.OK_CANCEL,
+    );
+    if (res.getSelectedButton() !== ui.Button.OK) return;
+    url = res.getResponseText().trim();
+    if (!URL_RE.test(url)) {
+      ui.alert("주소 모양이 맞지 않아요. 'https://script.google.com/' 로 시작하고 '/exec' 로 끝나는 주소를 붙여넣어 주세요.");
+      return;
+    }
+  }
+  // 앱이 읽을 수 있도록 '설정' 탭에 주소를 적는다. (주소는 공개돼도 괜찮다. 올리기에는 비밀번호가 필요하다)
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(SETTINGS_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(SETTINGS_SHEET);
+    sh.getRange(1, 1, 1, 2).setValues([["항목", "값"]]).setFontWeight("bold").setBackground("#8fb174").setFontColor("#ffffff");
+    sh.setFrozenRows(1);
+    sh.setColumnWidth(1, 160);
+    sh.setColumnWidth(2, 520);
+  }
+  const last = sh.getLastRow();
+  const keys = last >= 2 ? sh.getRange(2, 1, last - 1, 1).getValues().map((r) => String(r[0]).trim()) : [];
+  const i = keys.indexOf(URL_KEY);
+  sh.getRange(i >= 0 ? i + 2 : last + 1, 1, 1, 2).setValues([[URL_KEY, url]]);
+  ui.alert(
+    "✅ 연결 완료!",
+    "이제 앱 오른쪽 위 🔑 로 관리자 로그인을 하면 사진 메뉴에서 바로 사진을 올릴 수 있어요.\n" +
+      "(앱을 껐다 켜거나 ↻ 를 누르면 🔑 버튼이 나타납니다)\n\n관리자: " + adminIds_().join(", "),
+    ui.ButtonSet.OK,
+  );
+}
+
+function menuAdmin() {
+  const ui = SpreadsheetApp.getUi();
+  const ids = adminIds_();
+  const r1 = ui.prompt(
+    "관리자 추가·비밀번호 변경",
+    "지금 관리자: " + (ids.join(", ") || "없음") + "\n\n아이디를 입력하세요. (새 아이디면 추가, 있는 아이디면 비밀번호 변경)",
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (r1.getSelectedButton() !== ui.Button.OK) return;
+  const id = r1.getResponseText().trim().toLowerCase();
+  if (!/^[a-z0-9_.-]{2,30}$/.test(id)) {
+    ui.alert("아이디는 영문 소문자·숫자로 2~30자로 해 주세요. (예: admin, kim)");
+    return;
+  }
+  const r2 = ui.prompt(id + " 의 비밀번호", "새 비밀번호를 입력하세요. (6자 이상)\n비워 두고 확인을 누르면 이 관리자를 삭제합니다.", ui.ButtonSet.OK_CANCEL);
+  if (r2.getSelectedButton() !== ui.Button.OK) return;
+  const pw = r2.getResponseText();
+  if (pw && pw.length < 6) {
+    ui.alert("비밀번호는 6자 이상으로 해 주세요. (아무것도 바뀌지 않았어요)");
+    return;
+  }
+  // 대소문자만 다른 예전 속성까지 함께 정리한 뒤 저장한다.
+  Object.keys(props().getProperties())
+    .filter((k) => k.toLowerCase() === "user_" + id)
+    .forEach((k) => props().deleteProperty(k));
+  if (!pw) {
+    ui.alert(id + " 관리자를 삭제했어요.");
+    return;
+  }
+  props().setProperty("user_" + id, pw);
+  ui.alert("저장했어요. 아이디 " + id + " 로 로그인할 수 있습니다.");
 }

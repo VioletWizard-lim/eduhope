@@ -6,8 +6,7 @@
 //   - 비어 있으면 예시 내용으로 동작하는 "미리보기 모드"가 됩니다.
 export const SHEET_URL = "https://docs.google.com/spreadsheets/d/1cAznTPLL2JSD_pa2h3MhK-Le2LX7bJQv4EimP31XtUw/edit";
 
-// UPLOAD_URL: 관리자 사진 올리기용 Apps Script 웹 앱 주소 (https://script.google.com/macros/s/.../exec)
-//   - apps-script/Code.gs 를 시트에 설치하고 배포한 주소를 넣으면 앱에 "관리자" 로그인 버튼이 생깁니다.
-//   - 비워 두면 사진은 시트 '사진' 탭에 드라이브 링크를 붙여넣는 방식으로만 올립니다.
-//   - 자세한 순서는 README 의 "관리자 사진 올리기 설정" 참고.
+// UPLOAD_URL: 보통은 비워 두세요.
+//   관리자 사진 올리기 주소는 시트 메뉴 "📷 기윤실 앱 → ② 앱과 연결" 을 누르면 시트 '설정' 탭에 적히고,
+//   앱이 거기서 읽어 갑니다. 여기에 직접 넣으면 시트 값보다 우선합니다.
 export const UPLOAD_URL = "";

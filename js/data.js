@@ -8,8 +8,6 @@
 import { SHEET_URL, UPLOAD_URL } from "./config.js";
 
 export const preview = !SHEET_URL;
-// 관리자 사진 올리기를 쓸 수 있는가 (미리보기에서는 흉내만 낸다)
-export const canUpload = preview || !!UPLOAD_URL;
 
 const CACHE_KEY = "eduhope-data-v3";
 const SESSION_KEY = "eduhope-admin";
@@ -37,6 +35,19 @@ export function cached() {
   }
 }
 
+// 사진 올리기 주소: config.js 에 있으면 그것을, 없으면 시트 '설정' 탭의 "사진 올리기 주소"를 쓴다.
+// (시트 메뉴 "📷 기윤실 앱 → ② 앱과 연결" 이 그 칸을 채운다)
+const URL_KEY = "사진 올리기 주소";
+const URL_RE = /^https:\/\/script\.google\.com\/(a\/macros\/[^/]+|macros)\/s\/[\w-]+\/exec$/;
+let latest = cached();
+function uploadUrl() {
+  if (UPLOAD_URL) return UPLOAD_URL;
+  const v = (latest?.settings || []).find((r) => r.key === URL_KEY)?.value || "";
+  return URL_RE.test(v) ? v : "";
+}
+// 관리자 사진 올리기를 쓸 수 있는가 (미리보기에서는 흉내만 낸다)
+export const canUpload = () => preview || !!uploadUrl();
+
 // 방금 올리거나 지운 사진. 시트 반영이 몇 초 늦어도 화면에서 바로 보이거나 사라지게 한다.
 const justAdded = new Map();
 const justRemoved = new Set();
@@ -44,6 +55,7 @@ const justRemoved = new Set();
 export async function fetchLatest() {
   const data = preview ? previewData() : await readSheetLink();
   set(CACHE_KEY, JSON.stringify(data));
+  latest = data;
   const ids = new Set(data.photos.map((p) => p.id));
   for (const [id, p] of justAdded) if (ids.has(id)) justAdded.delete(id);
   data.photos = data.photos.filter((p) => !justRemoved.has(p.id)).concat([...justAdded.values()]);
@@ -76,7 +88,9 @@ async function post(req) {
   if (preview) out = fakePost(body);
   else {
     // text/plain 으로 보내야 브라우저가 사전 확인(CORS preflight) 없이 바로 보낸다.
-    const res = await fetch(UPLOAD_URL, { method: "POST", body: JSON.stringify(body) });
+    const url = uploadUrl();
+    if (!url) throw new Error("사진 올리기가 아직 연결되지 않았습니다.");
+    const res = await fetch(url, { method: "POST", body: JSON.stringify(body) });
     if (!res.ok) throw new Error(`사진 서버 응답 오류 (${res.status})`);
     out = await res.json();
   }
@@ -163,6 +177,7 @@ export const TABS = {
   newsletters: { name: "소식지", cols: { 제목: "title", 발행일: "date", 날짜: "date", 요약: "summary", 링크: "url" } },
   donors: { name: "후원자", cols: { 이름: "name", 구분: "type", 시작연도: "since" } },
   photos: { name: "사진", cols: { "사진 링크": "link", 링크: "link", 사진: "link", 앨범: "album", 설명: "caption", 날짜: "date" } },
+  settings: { name: "설정", cols: { 항목: "key", 값: "value" } },
 };
 
 export function sheetId(url) {
