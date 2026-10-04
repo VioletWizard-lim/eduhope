@@ -14,7 +14,8 @@
  *   1) 시트 메뉴 [확장 프로그램 → Apps Script] 에 이 파일 내용을 붙여넣고 저장(💾)
  *   2) 시트 탭으로 돌아가 새로고침 → 위쪽에 생긴 [📷 기윤실 앱 → ① 설정 시작] → 권한 허용
  *   3) 팝업 안내대로 [배포 → 새 배포 → 웹 앱] (실행 계정: 나 / 액세스: 모든 사용자)
- *   4) 시트 메뉴 [📷 기윤실 앱 → ② 앱과 연결] → 끝 (앱이 시트에서 주소를 읽어 갑니다)
+ *   4) 배포 화면의 '웹 앱 URL' 을 복사 → 시트 메뉴 [📷 기윤실 앱 → ② 앱과 연결] 에 붙여넣기
+ *      → 끝 (주소가 시트 '설정' 탭에 적히고, 앱이 거기서 읽어 갑니다)
  */
 
 const PHOTO_SHEET = "사진";
@@ -286,7 +287,11 @@ function menuSetup() {
       <li>실행 계정 <b>나</b> / 액세스 권한 <b>모든 사용자</b> → <span class="k">배포</span></li>
     </ol>
     <h3>3단계: 연결하기</h3>
-    <p>시트로 돌아와 메뉴 <span class="k">${MENU}</span> → <span class="k">② 앱과 연결</span> 을 누르면 끝이에요.</p>`;
+    <ol>
+      <li>배포가 끝나면 나오는 <b>웹 앱 URL</b> 아래 <span class="k">복사</span> 클릭<br>
+        (나중에 다시 보려면 <span class="k">배포</span> → <span class="k">배포 관리</span>)</li>
+      <li>시트로 돌아와 메뉴 <span class="k">${MENU}</span> → <span class="k">② 앱과 연결</span> → 주소 붙여넣기 → 끝!</li>
+    </ol>`;
   SpreadsheetApp.getUi().showModalDialog(HtmlService.createHtmlOutput(html).setWidth(460).setHeight(560), "기윤실 앱 사진 올리기 설정");
 }
 
@@ -298,25 +303,21 @@ function menuConnect() {
     ui.alert("먼저 [" + MENU + " → ① 설정 시작] 을 해 주세요.");
     return;
   }
-  let url = "";
-  try {
-    url = ScriptApp.getService().getUrl() || "";
-  } catch (err) {
-    url = "";
-  }
+  // ScriptApp.getService().getUrl() 은 실제 배포 주소가 아닌 내부 주소를 돌려줄 때가 있어
+  // (그 주소는 "파일을 열 수 없습니다"가 뜬다) 항상 배포 화면의 주소를 붙여넣게 한다.
+  const res = ui.prompt(
+    "앱과 연결",
+    "웹 앱 주소를 붙여넣어 주세요.\n\n" +
+      "주소 복사하는 곳: Apps Script 화면 → [배포] → [배포 관리] → '웹 앱 URL' 아래 [복사]\n" +
+      "(https://script.google.com/macros/s/.../exec 모양)\n\n" +
+      "아직 배포하지 않았다면 [취소] 후 [① 설정 시작] 안내의 2단계를 먼저 해 주세요.",
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (res.getSelectedButton() !== ui.Button.OK) return;
+  const url = res.getResponseText().trim();
   if (!URL_RE.test(url)) {
-    const res = ui.prompt(
-      "앱과 연결",
-      "배포가 끝나면 나오는 '웹 앱 URL'(https://script.google.com/macros/s/.../exec)을 붙여넣어 주세요.\n" +
-        "아직 배포하지 않았다면 [취소] 후 [① 설정 시작] 안내의 2단계를 먼저 해 주세요.",
-      ui.ButtonSet.OK_CANCEL,
-    );
-    if (res.getSelectedButton() !== ui.Button.OK) return;
-    url = res.getResponseText().trim();
-    if (!URL_RE.test(url)) {
-      ui.alert("주소 모양이 맞지 않아요. 'https://script.google.com/' 로 시작하고 '/exec' 로 끝나는 주소를 붙여넣어 주세요.");
-      return;
-    }
+    ui.alert("주소 모양이 맞지 않아요. 'https://script.google.com/' 로 시작하고 '/exec' 로 끝나는 주소를 붙여넣어 주세요.");
+    return;
   }
   // 앱이 읽을 수 있도록 '설정' 탭에 주소를 적는다. (주소는 공개돼도 괜찮다. 올리기에는 비밀번호가 필요하다)
   const ss = SpreadsheetApp.getActive();

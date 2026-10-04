@@ -362,8 +362,8 @@ function openForm({ title, fields, values = {}, submitLabel = "저장", onSubmit
     const values = Object.fromEntries([...new FormData(form).entries()].map(([k, v]) => [k, String(v).trim()]));
     busy(true);
     try {
-      await onSubmit(values);
-      $dialog.close();
+      // onSubmit 이 false 를 돌려주면 창을 닫지 않는다. (안내 창으로 바꿔 보여 줄 때)
+      if ((await onSubmit(values)) !== false) $dialog.close();
     } catch (e) {
       toast(e.message);
     }
@@ -419,6 +419,10 @@ function uploadPhotos(files) {
           await data.uploadPhoto({ dataUrl: await shrink(f), album, caption });
           done++;
         } catch (e) {
+          if (e.message === data.CONNECT_HELP) {
+            showHelp(e.message);
+            break;
+          }
           toast(`${f.name}: ${e.message}`);
           if (e.code === "auth") {
             state.me = null;
@@ -563,6 +567,18 @@ function renderHeader() {
   $account.querySelector("#refresh").onclick = refresh;
 }
 
+// 연결 문제처럼 긴 안내는 잠깐 뜨는 알림 대신 창으로 보여 준다.
+function showHelp(msg) {
+  $dialog.innerHTML = `
+    <form method="dialog">
+      <h2>⚠️ 사진 올리기 연결 확인</h2>
+      <p>${esc(msg).replace(/ (?=[①②③])/g, "<br>")}</p>
+      <p class="meta">자세한 방법은 README 의 "문제 해결"을 참고하세요.</p>
+      <div class="actions"><button type="submit" class="btn primary">확인</button></div>
+    </form>`;
+  if (!$dialog.open) $dialog.showModal();
+}
+
 function login() {
   openForm({
     title: "관리자 로그인",
@@ -572,7 +588,15 @@ function login() {
       { name: "pw", label: data.preview ? "비밀번호 (미리보기: admin)" : "비밀번호", type: "password", required: true, autocomplete: "current-password" },
     ],
     onSubmit: async ({ id, pw }) => {
-      await data.login(id, pw);
+      try {
+        await data.login(id, pw);
+      } catch (e) {
+        if (e.message === data.CONNECT_HELP) {
+          showHelp(e.message);
+          return false;
+        }
+        throw e;
+      }
       state.me = data.session();
       toast("로그인했습니다. 사진 메뉴에서 사진을 올릴 수 있어요.");
       render();
