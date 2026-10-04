@@ -256,6 +256,7 @@ function onOpen() {
     .addItem("② 앱과 연결", "menuConnect")
     .addSeparator()
     .addItem("관리자 추가·비밀번호 변경", "menuAdmin")
+    .addItem("관리자 삭제", "menuRemoveAdmin")
     .addToUi();
 }
 
@@ -378,21 +379,40 @@ function menuAdmin() {
     ui.alert("아이디는 영문 소문자·숫자로 2~30자로 해 주세요. (예: admin, kim)");
     return;
   }
-  const r2 = ui.prompt(id + " 의 비밀번호", "새 비밀번호를 입력하세요. (6자 이상)\n비워 두고 확인을 누르면 이 관리자를 삭제합니다.", ui.ButtonSet.OK_CANCEL);
+  const r2 = ui.prompt(id + " 의 비밀번호", "새 비밀번호를 입력하세요. (6자 이상)", ui.ButtonSet.OK_CANCEL);
   if (r2.getSelectedButton() !== ui.Button.OK) return;
   const pw = r2.getResponseText();
-  if (pw && pw.length < 6) {
+  // 빈칸이나 짧은 비밀번호는 아무것도 바꾸지 않는다. (실수로 확인을 눌러도 안전하게)
+  if (pw.length < 6) {
     ui.alert("비밀번호는 6자 이상으로 해 주세요. (아무것도 바뀌지 않았어요)");
     return;
   }
-  // 대소문자만 다른 예전 속성까지 함께 정리한 뒤 저장한다.
+  removeAdmin_(id); // 대소문자만 다른 예전 속성까지 정리한 뒤 저장
+  props().setProperty("user_" + id, pw);
+  ui.alert(ids.indexOf(id) >= 0 ? id + " 의 비밀번호를 바꿨어요." : "관리자 " + id + " 를 추가했어요. 이 아이디로 로그인할 수 있습니다.");
+}
+
+function menuRemoveAdmin() {
+  const ui = SpreadsheetApp.getUi();
+  const ids = adminIds_();
+  if (ids.length <= 1) {
+    ui.alert("관리자가 " + (ids[0] || "없음") + " 한 명뿐이라 삭제할 수 없어요.\n(마지막 관리자를 지우면 아무도 사진을 올릴 수 없게 됩니다)");
+    return;
+  }
+  const r = ui.prompt("관리자 삭제", "지금 관리자: " + ids.join(", ") + "\n\n삭제할 아이디를 입력하세요.", ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const id = r.getResponseText().trim().toLowerCase();
+  if (ids.indexOf(id) < 0) {
+    ui.alert("'" + id + "' 라는 관리자가 없어요. (아무것도 바뀌지 않았어요)");
+    return;
+  }
+  if (ui.alert("정말 삭제할까요?", "관리자 " + id + " 를 삭제하면 이 아이디로는 더 이상 사진을 올리거나 지울 수 없어요.", ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+  removeAdmin_(id);
+  ui.alert(id + " 관리자를 삭제했어요.");
+}
+
+function removeAdmin_(id) {
   Object.keys(props().getProperties())
     .filter((k) => k.toLowerCase() === "user_" + id)
     .forEach((k) => props().deleteProperty(k));
-  if (!pw) {
-    ui.alert(id + " 관리자를 삭제했어요.");
-    return;
-  }
-  props().setProperty("user_" + id, pw);
-  ui.alert("저장했어요. 아이디 " + id + " 로 로그인할 수 있습니다.");
 }
