@@ -18,7 +18,6 @@ const state = {
     return { year: t.getFullYear(), month: t.getMonth(), selected: ymd(t) };
   })(),
   donorQuery: "",
-  album: "",
 };
 
 // ---------------------------------------------------------------
@@ -140,19 +139,43 @@ const views = {
   },
 
   photos() {
-    const albums = [...new Set(state.db.photos.map((p) => p.album || ""))].filter(Boolean).sort().reverse();
-    const list = state.db.photos.filter((p) => !state.album || p.album === state.album).sort(byDateDesc);
+    const upload = can(role(), "photos")
+      ? `<label class="btn primary small">+ 사진 올리기<input type="file" accept="image/*" multiple hidden data-act="upload" /></label>`
+      : "";
+    const albums = albumList();
+    const key = routeParam();
+    const album = key && albums.find((a) => a.key === key);
+
+    // 사진첩 하나를 연 화면
+    if (album) {
+      return `
+        <a class="back-link" href="#/photos">‹ 사진첩</a>
+        <div class="row">
+          <h2 class="album-title">${esc(album.name)} <span class="meta">${album.photos.length}장</span></h2>
+          ${upload}
+        </div>
+        <div id="upload-status" class="meta"></div>
+        ${gallery(album.photos)}
+      `;
+    }
+    // 사진첩 목록 (사진첩이 하나뿐이면 바로 사진을 보여준다)
     return `
       <div class="row">
         <div class="section-title">📷 사진</div>
-        ${can(role(), "photos") ? `<label class="btn primary small">+ 사진 올리기<input type="file" accept="image/*" multiple hidden data-act="upload" /></label>` : ""}
+        ${upload}
       </div>
       <div id="upload-status" class="meta"></div>
-      ${albums.length ? `<div class="chips" style="margin-bottom:12px">
-        <button class="chip ${state.album ? "" : "on"}" data-album="">전체</button>
-        ${albums.map((a) => `<button class="chip ${state.album === a ? "on" : ""}" data-album="${esc(a)}">${esc(a)}</button>`).join("")}
-      </div>` : ""}
-      ${list.length ? gallery(list) : `<div class="card empty">아직 사진이 없습니다.</div>`}
+      ${!albums.length
+        ? `<div class="card empty">아직 사진이 없습니다.</div>`
+        : albums.length === 1
+          ? gallery(albums[0].photos)
+          : `<div class="albums">${albums
+              .map((a) => `<a class="album" href="#/photos/${encodeURIComponent(a.key)}">
+                  <span class="cover">${a.photos.slice(0, 4).map((p) => `<img src="${esc(data.photoUrl(p.id, 320))}" alt="" loading="lazy" referrerpolicy="no-referrer" />`).join("")}</span>
+                  <b>${esc(a.name)}</b>
+                  <span class="meta">${a.photos.length}장${a.date ? ` · ${esc(a.date.slice(0, 7).replace("-", "."))}` : ""}</span>
+                </a>`)
+              .join("")}</div>`}
     `;
   },
 
@@ -271,6 +294,18 @@ const views = {
     `;
   },
 };
+
+// 사진을 사진첩(시트의 '앨범' 칸) 별로 묶는다. 최근 사진이 있는 사진첩이 앞에 온다.
+const NO_ALBUM = "_";
+function albumList() {
+  const map = new Map();
+  for (const p of [...state.db.photos].sort(byDateDesc)) {
+    const key = p.album || NO_ALBUM;
+    if (!map.has(key)) map.set(key, { key, name: p.album || "기타 사진", photos: [], date: p.date || "" });
+    map.get(key).photos.push(p);
+  }
+  return [...map.values()].sort((a, b) => (a.key === NO_ALBUM) - (b.key === NO_ALBUM) || b.date.localeCompare(a.date));
+}
 
 function linkButton(l) {
   const internal = l.url.startsWith("#/");
@@ -460,7 +495,7 @@ function uploadPhotos(files) {
       { name: "album", label: `앨범 이름 (비우면 앨범 없이)${albums.length ? ` — 기존: ${albums.join(", ")}` : ""}`, placeholder: "예: 2026 여름 수련회" },
       { name: "caption", label: "사진 설명 (비워도 됩니다)" },
     ],
-    values: { album: state.album },
+    values: { album: route() === "photos" && routeParam() !== NO_ALBUM ? routeParam() : "" },
     onSubmit: async ({ album, caption }) => {
       $dialog.close();
       const status = () => $view.querySelector("#upload-status");
@@ -481,26 +516,58 @@ function uploadPhotos(files) {
   });
 }
 
-function openPhoto(p) {
+// 사진 크게 보기. 같은 사진첩 안에서 ‹ › 버튼이나 좌우로 밀어서 넘길 수 있다.
+function openPhoto(p, list = [p]) {
   if (!p) return;
+  let i = Math.max(0, list.findIndex((x) => x.id === p.id));
   const editable = can(role(), "photos");
   $dialog.innerHTML = `
     <form method="dialog" class="lightbox">
-      <img src="${esc(data.photoUrl(p.id, 1600))}" alt="${esc(p.caption || "")}" referrerpolicy="no-referrer" />
-      ${p.caption ? `<div>${esc(p.caption)}</div>` : ""}
-      <div class="meta">${p.album ? `${esc(p.album)} · ` : ""}${fmtDate(p.date)}</div>
+      <div class="lb-stage">
+        <img alt="" referrerpolicy="no-referrer" />
+        ${list.length > 1 ? `<button type="button" class="lb-nav prev" data-step="-1" aria-label="이전 사진">‹</button>
+          <button type="button" class="lb-nav next" data-step="1" aria-label="다음 사진">›</button>` : ""}
+      </div>
+      <div class="lb-caption"></div>
+      <div class="meta lb-meta"></div>
       <div class="actions">
         ${editable ? `<button type="button" class="btn danger" data-act="del" style="margin-right:auto">삭제</button>` : ""}
         <button type="submit" class="btn">닫기</button>
       </div>
     </form>`;
+  const img = $dialog.querySelector(".lb-stage img");
+  const show = () => {
+    const cur = list[i];
+    img.src = data.photoUrl(cur.id, 1600);
+    img.alt = cur.caption || "";
+    $dialog.querySelector(".lb-caption").textContent = cur.caption || "";
+    $dialog.querySelector(".lb-meta").textContent = [cur.album, fmtDate(cur.date), list.length > 1 ? `${i + 1} / ${list.length}` : ""].filter(Boolean).join(" · ");
+  };
+  const step = (d) => {
+    i = (i + d + list.length) % list.length;
+    show();
+  };
+  $dialog.querySelectorAll("[data-step]").forEach((b) => (b.onclick = () => step(+b.dataset.step)));
+  let x0 = null;
+  img.addEventListener("touchstart", (e) => (x0 = e.touches[0].clientX), { passive: true });
+  img.addEventListener("touchend", (e) => {
+    if (x0 === null || list.length < 2) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    if (Math.abs(dx) > 40) step(dx < 0 ? 1 : -1);
+    x0 = null;
+  });
+  $dialog.onkeydown = (e) => {
+    if (e.key === "ArrowLeft") step(-1);
+    if (e.key === "ArrowRight") step(1);
+  };
+  show();
   $dialog.showModal();
   const del = $dialog.querySelector('[data-act="del"]');
   if (del)
     del.onclick = async () => {
       if (!confirm("이 사진을 삭제할까요? (드라이브 휴지통으로 이동)")) return;
       try {
-        await data.deletePhoto(p.id);
+        await data.deletePhoto(list[i].id);
         $dialog.close();
         toast("삭제했습니다.");
         await refresh();
@@ -521,11 +588,12 @@ $view.addEventListener("click", (ev) => {
     state.cal.selected = t.dataset.day;
     return render();
   }
-  if (t.dataset.album !== undefined) {
-    state.album = t.dataset.album;
-    return render();
+  if (t.dataset.photo) {
+    // 누른 사진이 속한 목록(사진첩 또는 홈의 최근 사진) 안에서 넘겨 볼 수 있게 한다.
+    const ids = [...t.closest(".gallery").querySelectorAll("[data-photo]")].map((b) => b.dataset.photo);
+    const list = ids.map((id) => state.db.photos.find((p) => p.id === id)).filter(Boolean);
+    return openPhoto(list.find((p) => p.id === t.dataset.photo), list);
   }
-  if (t.dataset.photo) return openPhoto(state.db.photos.find((p) => p.id === t.dataset.photo));
   if (t.dataset.edit) {
     const [col, id] = t.dataset.edit.split(":");
     return edit(col, state.db[col].find((x) => x.id === id));
@@ -638,9 +706,18 @@ async function refresh() {
 // ---------------------------------------------------------------
 // 라우팅
 // ---------------------------------------------------------------
+// 주소: #/화면이름 또는 #/화면이름/세부 (예: #/photos/2026%20수련회)
 function route() {
-  const name = location.hash.replace(/^#\/?/, "").split("?")[0] || "home";
+  const name = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "home";
   return views[name] ? name : "home";
+}
+function routeParam() {
+  const rest = location.hash.replace(/^#\/?/, "").split("?")[0].split("/").slice(1).join("/");
+  try {
+    return decodeURIComponent(rest);
+  } catch {
+    return rest;
+  }
 }
 
 function render() {
@@ -663,13 +740,27 @@ function show() {
   window.scrollTo(0, 0);
 }
 
+// 사진첩처럼 한 단계 더 들어간 화면은 기록을 하나 더 쌓아서, 뒤로가기 → 사진첩 목록 → 홈 순서가 된다.
+let pending = null; // 한 단계 위로 올라간 뒤 이어서 갈 화면
 function go(hash) {
+  const cur = location.hash || "#/";
+  if (hash === cur) return;
   const toHome = hash === "#/" || hash === "#";
+  const deep = ours() && history.state?.deep;
   if (toHome) {
     if (route() === "home") return;
-    if (history.state?.sub && ours()) return history.back(); // 기록상 바로 앞이 홈
+    if (history.state?.sub && ours()) return history.go(deep ? -2 : -1); // 기록상 앞이 홈
     history.replaceState({ s: SESSION }, "", "#/");
     return show();
+  }
+  if (route() !== "home" && hash.startsWith(cur.replace(/\/$/, "") + "/")) {
+    history.pushState({ s: SESSION, sub: true, deep: true }, "", hash); // 한 단계 안으로
+    return show();
+  }
+  if (deep) {
+    // 안쪽 화면에서 나갈 때는 먼저 한 단계 위로 돌아간 뒤 이동한다.
+    if (!cur.startsWith(hash + "/")) pending = hash;
+    return history.back();
   }
   if (route() === "home") history.pushState({ s: SESSION, sub: true }, "", hash);
   else history.replaceState({ s: SESSION, sub: true }, "", hash); // 화면끼리 옮겨 다녀도 기록이 쌓이지 않게
@@ -677,6 +768,11 @@ function go(hash) {
 }
 
 window.addEventListener("popstate", () => {
+  if (ours() && pending) {
+    const h = pending;
+    pending = null;
+    return go(h);
+  }
   if (ours()) return show();
   // 예전 기록이면 계속 뒤로 간다. 더 갈 곳이 없으면 그 자리를 홈으로 삼는다.
   const before = location.href;
@@ -701,8 +797,14 @@ if (route() === "home") {
   history.replaceState({ s: SESSION }, "", location.hash || "#/");
 } else {
   const here = location.hash;
+  const parent = `#/${route()}`;
   history.replaceState({ s: SESSION }, "", "#/");
-  history.pushState({ s: SESSION, sub: true }, "", here);
+  if (here !== parent && routeParam()) {
+    history.pushState({ s: SESSION, sub: true }, "", parent);
+    history.pushState({ s: SESSION, sub: true, deep: true }, "", here);
+  } else {
+    history.pushState({ s: SESSION, sub: true }, "", here);
+  }
 }
 
 // 다른 앱을 보다가 돌아오면 새 내용을 받아온다.
