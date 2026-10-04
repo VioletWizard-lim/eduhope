@@ -579,7 +579,10 @@ $view.addEventListener("input", (ev) => {
 // ---------------------------------------------------------------
 function renderHeader() {
   const refreshBtn = `<button class="btn small" id="refresh" ${state.loading ? "disabled" : ""} aria-label="새로고침">${state.loading ? "…" : "↻"}</button>`;
-  if (!state.me) {
+  if (!data.editable) {
+    // 기본(시트 링크) 모드: 편집은 구글 시트에서. 시트 편집 권한이 있는 사람만 고칠 수 있다.
+    $account.innerHTML = `${refreshBtn}${SHEET_URL ? `<a class="btn small" href="${esc(SHEET_URL)}" target="_blank" rel="noopener">✏️ 편집</a>` : ""}`;
+  } else if (!state.me) {
     $account.innerHTML = `${refreshBtn}<button class="btn small" id="login">관리자</button>`;
     $account.querySelector("#login").onclick = login;
   } else {
@@ -664,7 +667,7 @@ document.addEventListener("visibilitychange", () => {
 state.db = normalize(data.cached());
 if (data.preview) {
   $banner.hidden = false;
-  $banner.innerHTML = `👀 <b>미리보기</b> — 예시 내용입니다. 오른쪽 위 <b>관리자</b>에서 admin/admin, calendar/calendar 로 로그인해 보세요. 구글 시트를 연결하면(README 참고) 실제 내용이 나타납니다.`;
+  $banner.innerHTML = `👀 <b>미리보기</b> — 예시 내용입니다. <code>js/config.js</code> 에 구글 시트 링크를 넣으면 실제 내용이 나타납니다.`;
 }
 render();
 refresh();

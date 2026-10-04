@@ -1,11 +1,18 @@
-// 구글 시트(Apps Script 웹 앱)와 주고받는 부분.
+// 구글 시트에서 내용을 받아오는 부분.
 // 마지막으로 받은 내용을 브라우저에 저장해 두고, 앱을 열면 그것부터 즉시 보여준 뒤
 // 뒤에서 새 내용을 받아와 바꿔 끼운다. (시트 응답이 1~2초 걸려도 화면은 바로 뜬다)
-// SCRIPT_URL 이 없으면 같은 동작을 브라우저 안에서 흉내 내는 "미리보기 모드"가 된다.
+//
+// 동작 방식은 config.js 에 따라 셋 중 하나다.
+//   1) SHEET_URL 만 있음 (기본): 공개된 시트를 링크로 읽기만 한다. 편집은 구글 시트에서.
+//   2) SCRIPT_URL 도 있음 (선택): Apps Script 를 통해 앱 안에서 로그인·편집까지 한다.
+//   3) 둘 다 없음: 예시 내용으로 동작하는 미리보기.
 
-import { SCRIPT_URL } from "./config.js";
+import { SHEET_URL, SCRIPT_URL } from "./config.js";
 
-export const preview = !SCRIPT_URL;
+export const mode = SCRIPT_URL ? "script" : SHEET_URL ? "sheet" : "preview";
+export const preview = mode === "preview";
+// 앱 안 로그인/편집이 가능한 모드인가
+export const editable = mode === "script";
 
 // 역할별로 고칠 수 있는 것. apps-script/Code.gs 의 PERMS 와 같게 유지할 것.
 export const ROLES = { admin: "관리자", calendar: "일정담당" };
@@ -56,8 +63,13 @@ export function cached() {
 
 export async function fetchLatest() {
   const s = session();
+  if (mode === "sheet") {
+    const data = await readSheetLink();
+    set(CACHE_KEY, JSON.stringify(data));
+    return data;
+  }
   const data = preview
-    ? fake.read(s?.token, get(DONOR_KEY))
+    ? fake.read(null, "1234")
     : await (async () => {
         const q = new URLSearchParams({ key: get(DONOR_KEY) || "", token: s?.token || "", t: Date.now() });
         const res = await fetch(`${SCRIPT_URL}?${q}`);
@@ -106,10 +118,104 @@ export const uploadPhoto = (p) => post({ action: "uploadPhoto", ...p });
 export const deletePhoto = (id) => post({ action: "deletePhoto", id });
 export const setDonorKey = (key) => set(DONOR_KEY, key || null);
 
-// 드라이브 사진 주소 (사진 폴더가 "링크가 있는 모든 사용자"에게 공개되어 있어야 보인다)
+// 드라이브 사진 주소 (사진이 "링크가 있는 모든 사용자"에게 공개되어 있어야 보인다)
+// id 자리에는 드라이브 파일 ID 또는 일반 이미지 주소가 올 수 있다.
 export function photoUrl(id, width) {
-  if (String(id).startsWith("data:")) return id; // 미리보기 사진
+  if (/^(data:|https?:)/.test(String(id))) return id;
   return `https://lh3.googleusercontent.com/d/${encodeURIComponent(id)}=w${width}`;
+}
+
+// ---------------------------------------------------------------
+// 1) 시트 링크로 읽기 — 구글 시트의 공개 조회(gviz) 기능을 쓴다.
+// ---------------------------------------------------------------
+// 시트 탭 이름과 머리글(1행) → 앱에서 쓰는 이름
+export const TABS = {
+  events: { name: "캘린더", cols: { 제목: "title", 시작일: "date", 날짜: "date", 종료일: "endDate", 시간: "time", 장소: "place", 메모: "memo" } },
+  prayers: { name: "기도문", cols: { 제목: "title", 날짜: "date", 내용: "body", 기도문: "body" } },
+  newsletters: { name: "소식지", cols: { 제목: "title", 발행일: "date", 날짜: "date", 요약: "summary", 링크: "url" } },
+  donors: { name: "후원자", cols: { 이름: "name", 구분: "type", 시작연도: "since" } },
+  photos: { name: "사진", cols: { "사진 링크": "link", 링크: "link", 사진: "link", 앨범: "album", 설명: "caption", 날짜: "date" } },
+};
+
+export function sheetId(url) {
+  const m = /\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/.exec(url || "");
+  return m ? m[1] : String(url || "").trim();
+}
+
+// 드라이브 공유 링크에서 파일 ID 를 뽑는다. 드라이브 링크가 아니면 주소를 그대로 쓴다.
+export function driveId(link) {
+  const s = String(link || "").trim();
+  const m = /\/file\/d\/([a-zA-Z0-9_-]+)/.exec(s) || /[?&]id=([a-zA-Z0-9_-]+)/.exec(s) || /\/d\/([a-zA-Z0-9_-]{20,})/.exec(s);
+  if (m) return m[1];
+  return /^https?:\/\//.test(s) ? s : /^[a-zA-Z0-9_-]{20,}$/.test(s) ? s : "";
+}
+
+const pad = (n) => String(n).padStart(2, "0");
+
+// gviz 응답의 칸 하나를 글자로 바꾼다. 날짜는 "Date(2026,9,10)" (월은 0부터), 시간은 [19,30,0,0] 으로 온다.
+export function cellText(cell) {
+  if (!cell || cell.v == null) return cell?.f ? String(cell.f) : "";
+  const v = cell.v;
+  if (typeof v === "string") {
+    const m = /^Date\((\d+),(\d+),(\d+)/.exec(v);
+    if (m) return `${m[1]}-${pad(+m[2] + 1)}-${pad(m[3])}`;
+    return v.trim();
+  }
+  if (Array.isArray(v)) return `${pad(v[0])}:${pad(v[1])}`;
+  if (typeof v === "number") return String(v);
+  if (typeof v === "boolean") return v ? "예" : "";
+  return String(v);
+}
+
+// gviz 응답(자바스크립트 함수 호출로 감싸진 JSON)을 줄 목록으로 바꾼다.
+export function parseGviz(text, def) {
+  const json = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1));
+  if (json.status === "error") return [];
+  let labels = json.table.cols.map((c) => String(c.label || "").trim());
+  let rows = json.table.rows.map((r) => (r.c || []).map(cellText));
+  // 머리글을 못 알아본 경우 첫 줄을 머리글로 쓴다.
+  if (!labels.some((l) => def.cols[l]) && rows.length) {
+    labels = rows[0].map((x) => x.trim());
+    rows = rows.slice(1);
+  }
+  const keys = labels.map((l) => def.cols[l.replace(/\s*\(.*\)$/, "")] || def.cols[l] || null);
+  return rows
+    .map((r, i) => {
+      const o = { id: `${def.name}-${i}` };
+      keys.forEach((k, j) => {
+        if (k && !o[k]) o[k] = (r[j] || "").trim();
+      });
+      return o;
+    })
+    .filter((o) => Object.keys(o).length > 1 && Object.entries(o).some(([k, v]) => k !== "id" && v));
+}
+
+async function readTab(id, def) {
+  const url = `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:json&headers=1&sheet=${encodeURIComponent(def.name)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`시트를 읽을 수 없습니다 (${res.status}). 공유가 '링크가 있는 모든 사용자'인지 확인해 주세요.`);
+  return parseGviz(await res.text(), def);
+}
+
+async function readSheetLink() {
+  const id = sheetId(SHEET_URL);
+  const entries = await Promise.all(
+    Object.entries(TABS).map(async ([k, def]) => {
+      try {
+        return [k, await readTab(id, def)];
+      } catch (e) {
+        if (k === "events") throw e; // 캘린더도 못 읽으면 시트 연결 자체가 안 되는 것
+        return [k, []];
+      }
+    }),
+  );
+  const data = Object.fromEntries(entries);
+  data.photos = data.photos
+    .map((p) => ({ ...p, id: driveId(p.link) }))
+    .filter((p) => p.id);
+  data.updatedAt = new Date().toISOString();
+  data.me = null;
+  return data;
 }
 
 // ---------------------------------------------------------------
