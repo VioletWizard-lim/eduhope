@@ -227,7 +227,13 @@ table.roles td:first-child { word-break: break-all; }
   color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.6));
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
-.lightbox img { width: 100%; max-height: 70vh; object-fit: contain; border-radius: 8px; background: #000; }
+.dialog.photo-dialog { width: min(1400px, calc(100vw - 16px)); max-height: calc(100dvh - 16px); }
+.photo-dialog form.lightbox { padding: 12px 16px 16px; gap: 6px; }
+.lightbox img { display: block; width: 100%; max-height: calc(100dvh - 200px); object-fit: contain; background: #000; cursor: zoom-in; }
+.lb-stage.zoomed { overflow: auto; max-height: calc(100dvh - 200px); }
+.lb-stage.zoomed img { width: auto; max-width: none; max-height: none; cursor: zoom-out; }
+.lb-stage.zoomed .lb-nav { display: none; }
+.lb-hint { font-size: 12px; }
 
 .divider { text-align: center; color: var(--muted); font-size: 13px; }
 
@@ -253,7 +259,7 @@ button.chip { cursor: pointer; }
 .album b { font-size: 15px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .back-link { display: inline-block; margin: 4px 0 8px; font-weight: 600; text-decoration: none; }
 .album-title { margin: 0 0 12px; font-size: 20px; }
-.lb-stage { position: relative; }
+.lb-stage { position: relative; background: #000; border-radius: 8px; overflow: hidden; -webkit-overflow-scrolling: touch; }
 .lb-nav {
   position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border-radius: 999px;
   border: none; background: rgba(0,0,0,.45); color: #fff; font-size: 24px; line-height: 1; cursor: pointer;
