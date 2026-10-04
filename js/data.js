@@ -1,35 +1,19 @@
-// 구글 시트에서 내용을 받아오는 부분.
+// 앱의 데이터 부분.
+//  - 읽기: 공개된 구글 시트를 링크로 읽는다. (편집은 구글 시트에서)
+//  - 사진 올리기: 관리자가 로그인하면 Apps Script(apps-script/Code.gs)를 통해 드라이브에 저장한다.
 // 마지막으로 받은 내용을 브라우저에 저장해 두고, 앱을 열면 그것부터 즉시 보여준 뒤
 // 뒤에서 새 내용을 받아와 바꿔 끼운다. (시트 응답이 1~2초 걸려도 화면은 바로 뜬다)
-//
-// 동작 방식은 config.js 에 따라 셋 중 하나다.
-//   1) SHEET_URL 만 있음 (기본): 공개된 시트를 링크로 읽기만 한다. 편집은 구글 시트에서.
-//   2) SCRIPT_URL 도 있음 (선택): Apps Script 를 통해 앱 안에서 로그인·편집까지 한다.
-//   3) 둘 다 없음: 예시 내용으로 동작하는 미리보기.
+// SHEET_URL 이 없으면 예시 내용으로 동작하는 "미리보기"가 된다.
 
-import { SHEET_URL, SCRIPT_URL } from "./config.js";
+import { SHEET_URL, UPLOAD_URL } from "./config.js";
 
-export const mode = SCRIPT_URL ? "script" : SHEET_URL ? "sheet" : "preview";
-export const preview = mode === "preview";
-// 앱 안 로그인/편집이 가능한 모드인가
-export const editable = mode === "script";
+export const preview = !SHEET_URL;
+// 관리자 사진 올리기를 쓸 수 있는가 (미리보기에서는 흉내만 낸다)
+export const canUpload = preview || !!UPLOAD_URL;
 
-// 역할별로 고칠 수 있는 것. apps-script/Code.gs 의 PERMS 와 같게 유지할 것.
-export const ROLES = { admin: "관리자", calendar: "일정담당" };
-const PERMS = {
-  events: ["admin", "calendar"],
-  prayers: ["admin"],
-  newsletters: ["admin"],
-  donors: ["admin"],
-  photos: ["admin"],
-};
-export function can(role, col) {
-  return !!role && (PERMS[col] || []).includes(role);
-}
-
-const CACHE_KEY = "eduhope-data-v2";
-const SESSION_KEY = "eduhope-session";
-const DONOR_KEY = "eduhope-donor-key";
+const CACHE_KEY = "eduhope-data-v3";
+const SESSION_KEY = "eduhope-admin";
+const PREVIEW_KEY = "eduhope-preview-photos";
 
 function get(k) {
   try {
@@ -45,14 +29,6 @@ function set(k, v) {
   } catch {}
 }
 
-export function session() {
-  try {
-    return JSON.parse(get(SESSION_KEY)) || null;
-  } catch {
-    return null;
-  }
-}
-
 export function cached() {
   try {
     return JSON.parse(get(CACHE_KEY)) || null;
@@ -61,39 +37,49 @@ export function cached() {
   }
 }
 
+// 방금 올리거나 지운 사진. 시트 반영이 몇 초 늦어도 화면에서 바로 보이거나 사라지게 한다.
+const justAdded = new Map();
+const justRemoved = new Set();
+
 export async function fetchLatest() {
-  const s = session();
-  if (mode === "sheet") {
-    const data = await readSheetLink();
-    set(CACHE_KEY, JSON.stringify(data));
-    return data;
-  }
-  const data = preview
-    ? fake.read(null, "1234")
-    : await (async () => {
-        const q = new URLSearchParams({ key: get(DONOR_KEY) || "", token: s?.token || "", t: Date.now() });
-        const res = await fetch(`${SCRIPT_URL}?${q}`);
-        if (!res.ok) throw new Error(`시트 응답 오류 (${res.status})`);
-        return res.json();
-      })();
-  // 서버에서 계정이 지워졌거나 역할이 바뀌었으면 반영
-  if (s && !data.me) set(SESSION_KEY, null);
-  else if (s && data.me) set(SESSION_KEY, JSON.stringify({ ...s, ...data.me }));
+  const data = preview ? previewData() : await readSheetLink();
   set(CACHE_KEY, JSON.stringify(data));
+  const ids = new Set(data.photos.map((p) => p.id));
+  for (const [id, p] of justAdded) if (ids.has(id)) justAdded.delete(id);
+  data.photos = data.photos.filter((p) => !justRemoved.has(p.id)).concat([...justAdded.values()]);
   return data;
+}
+
+// 드라이브 사진 주소 (사진이 "링크가 있는 모든 사용자"에게 공개되어 있어야 보인다)
+// id 자리에는 드라이브 파일 ID 또는 일반 이미지 주소가 올 수 있다.
+export function photoUrl(id, width) {
+  if (String(id).startsWith("preview-")) return previewPhotos().find((p) => p.id === id)?.src || "";
+  if (/^(data:|https?:)/.test(String(id))) return id;
+  return `https://lh3.googleusercontent.com/d/${encodeURIComponent(id)}=w${width}`;
+}
+
+// ---------------------------------------------------------------
+// 관리자 로그인 / 사진 올리기
+// ---------------------------------------------------------------
+export function session() {
+  try {
+    return JSON.parse(get(SESSION_KEY)) || null;
+  } catch {
+    return null;
+  }
 }
 
 async function post(req) {
   const s = session();
   const body = { ...req, token: s?.token };
-  const out = preview
-    ? fake.post(body)
-    : await (async () => {
-        // text/plain 으로 보내야 브라우저가 사전 확인(CORS preflight) 없이 바로 보낸다.
-        const res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify(body) });
-        if (!res.ok) throw new Error(`시트 응답 오류 (${res.status})`);
-        return res.json();
-      })();
+  let out;
+  if (preview) out = fakePost(body);
+  else {
+    // text/plain 으로 보내야 브라우저가 사전 확인(CORS preflight) 없이 바로 보낸다.
+    const res = await fetch(UPLOAD_URL, { method: "POST", body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`사진 서버 응답 오류 (${res.status})`);
+    out = await res.json();
+  }
   if (!out.ok) {
     if (out.code === "auth") set(SESSION_KEY, null);
     throw Object.assign(new Error(out.error || "오류가 발생했습니다."), { code: out.code });
@@ -103,30 +89,72 @@ async function post(req) {
 
 export async function login(id, pw) {
   const out = await post({ action: "login", id, pw });
-  set(SESSION_KEY, JSON.stringify({ token: out.token, id: out.id, role: out.role }));
+  set(SESSION_KEY, JSON.stringify({ token: out.token, id: out.id }));
   return out;
 }
+
 export async function logout() {
   try {
     await post({ action: "logout" });
   } catch {}
   set(SESSION_KEY, null);
 }
-export const save = (col, item) => post({ action: "save", col, item });
-export const remove = (col, id) => post({ action: "delete", col, id });
-export const uploadPhoto = (p) => post({ action: "uploadPhoto", ...p });
-export const deletePhoto = (id) => post({ action: "deletePhoto", id });
-export const setDonorKey = (key) => set(DONOR_KEY, key || null);
 
-// 드라이브 사진 주소 (사진이 "링크가 있는 모든 사용자"에게 공개되어 있어야 보인다)
-// id 자리에는 드라이브 파일 ID 또는 일반 이미지 주소가 올 수 있다.
-export function photoUrl(id, width) {
-  if (/^(data:|https?:)/.test(String(id))) return id;
-  return `https://lh3.googleusercontent.com/d/${encodeURIComponent(id)}=w${width}`;
+export async function uploadPhoto({ dataUrl, album, caption }) {
+  const out = await post({ action: "upload", dataUrl, album, caption });
+  justAdded.set(out.photo.id, out.photo);
+  return out.photo;
+}
+
+export async function deletePhoto(id) {
+  await post({ action: "delete", id });
+  justAdded.delete(id);
+  justRemoved.add(id);
+}
+
+// 미리보기: 관리자 admin / admin, 올린 사진은 이 브라우저에만 저장
+function fakePost(req) {
+  if (req.action === "login") {
+    return req.id === "admin" && req.pw === "admin"
+      ? { ok: true, token: "preview", id: "admin" }
+      : { ok: false, error: "아이디 또는 비밀번호가 맞지 않습니다. (미리보기: admin / admin)" };
+  }
+  if (req.action === "logout") return { ok: true };
+  if (req.token !== "preview") return { ok: false, error: "로그인이 필요합니다.", code: "auth" };
+  const list = previewPhotos();
+  if (req.action === "upload") {
+    const id = "preview-" + Math.random().toString(36).slice(2, 10);
+    const photo = { id, album: req.album || "", caption: req.caption || "", date: new Date().toISOString().slice(0, 10) };
+    try {
+      localStorage.setItem(PREVIEW_KEY, JSON.stringify([...list, { ...photo, src: req.dataUrl }]));
+    } catch {
+      return { ok: false, error: "미리보기 저장 공간이 가득 찼습니다. (실제 연결 시에는 문제없습니다)" };
+    }
+    return { ok: true, photo };
+  }
+  if (req.action === "delete") {
+    set(PREVIEW_KEY, JSON.stringify(list.filter((p) => p.id !== req.id)));
+    return { ok: true };
+  }
+  return { ok: false, error: "알 수 없는 요청입니다." };
+}
+
+function previewPhotos() {
+  try {
+    return JSON.parse(get(PREVIEW_KEY) || "[]");
+  } catch {
+    return [];
+  }
+}
+
+function previewData() {
+  const d = sample();
+  d.photos = d.photos.concat(previewPhotos().map(({ src, ...p }) => p));
+  return d;
 }
 
 // ---------------------------------------------------------------
-// 1) 시트 링크로 읽기 — 구글 시트의 공개 조회(gviz) 기능을 쓴다.
+// 시트 링크로 읽기 — 구글 시트의 공개 조회(gviz) 기능을 쓴다.
 // ---------------------------------------------------------------
 // 시트 탭 이름과 머리글(1행) → 앱에서 쓰는 이름
 export const TABS = {
@@ -214,79 +242,8 @@ async function readSheetLink() {
     .map((p) => ({ ...p, id: driveId(p.link) }))
     .filter((p) => p.id);
   data.updatedAt = new Date().toISOString();
-  data.me = null;
   return data;
 }
-
-// ---------------------------------------------------------------
-// 미리보기 모드: Code.gs 와 같은 규칙으로 브라우저 안에서 동작
-// ---------------------------------------------------------------
-const fake = (() => {
-  const KEY = "eduhope-preview-v1";
-  const ACCOUNTS = { admin: { pw: "admin", role: "admin" }, calendar: { pw: "calendar", role: "calendar" } };
-  let db;
-  try {
-    db = JSON.parse(get(KEY));
-  } catch {}
-  if (!db) db = sample();
-  const persist = () => {
-    try {
-      localStorage.setItem(KEY, JSON.stringify(db));
-    } catch {
-      throw new Error("미리보기 저장 공간이 가득 찼습니다. (실제 시트 연결 시에는 문제없습니다)");
-    }
-  };
-  const userOf = (token) => (token && token.startsWith("preview-") && ACCOUNTS[token.slice(8)] ? { id: token.slice(8), role: ACCOUNTS[token.slice(8)].role } : null);
-  const uid = () => Math.random().toString(36).slice(2, 10);
-  const stamp = (by) => ({ updatedBy: by, updatedAt: new Date().toISOString().slice(0, 16).replace("T", " ") });
-
-  return {
-    read(token, key) {
-      const me = userOf(token);
-      const out = JSON.parse(JSON.stringify(db));
-      if (!(me?.role === "admin" || key === "1234")) {
-        out.donors = [];
-        out.donorsLocked = true;
-      }
-      out.me = me;
-      out.updatedAt = new Date().toISOString();
-      return out;
-    },
-    post(req) {
-      if (req.action === "login") {
-        const a = ACCOUNTS[String(req.id || "").trim().toLowerCase()];
-        if (!a || a.pw !== req.pw) return { ok: false, error: "아이디 또는 비밀번호가 맞지 않습니다." };
-        const id = String(req.id).trim().toLowerCase();
-        return { ok: true, token: "preview-" + id, id, role: a.role };
-      }
-      if (req.action === "logout") return { ok: true };
-      const me = userOf(req.token);
-      if (!me) return { ok: false, error: "로그인이 필요합니다.", code: "auth" };
-      const col = req.action.endsWith("Photo") ? "photos" : req.col;
-      if (!can(me.role, col)) return { ok: false, error: "권한이 없습니다." };
-      try {
-        if (req.action === "save") {
-          const list = db[col];
-          const i = list.findIndex((x) => x.id === req.item.id);
-          const row = { ...req.item, id: i >= 0 ? req.item.id : uid(), ...stamp(me.id) };
-          if (i >= 0) list[i] = row;
-          else list.push(row);
-        } else if (req.action === "delete") {
-          db[col] = db[col].filter((x) => x.id !== req.id);
-        } else if (req.action === "uploadPhoto") {
-          db.photos.push({ id: req.dataUrl, album: req.album || "", caption: req.caption || "", date: new Date().toISOString().slice(0, 10) });
-        } else if (req.action === "deletePhoto") {
-          db.photos = db.photos.filter((x) => x.id !== req.id);
-        }
-        persist();
-      } catch (e) {
-        db = JSON.parse(get(KEY)) || sample();
-        return { ok: false, error: e.message };
-      }
-      return { ok: true };
-    },
-  };
-})();
 
 function sample() {
   const d = (offset) => {
