@@ -651,26 +651,43 @@ function render() {
   renderHeader();
 }
 
-window.addEventListener("hashchange", () => {
+// 뒤로가기: 앱처럼 "홈 ← 지금 화면" 두 단계만 기록에 남긴다.
+//   다른 화면에서 뒤로가기 → 홈 / 홈에서 뒤로가기 → 앱 종료 (브라우저 탭에서는 이전 사이트)
+// 이번에 앱을 연 뒤 만든 기록에만 표식(s)을 달아 두고, 표식이 없는 예전 기록
+// (업데이트 전이나 새로고침 전에 쌓인 기록)은 뒤로가기 때 건너뛴다.
+const SESSION = Math.random().toString(36).slice(2);
+const ours = () => history.state?.s === SESSION;
+
+function show() {
   render();
   window.scrollTo(0, 0);
-});
+}
 
-// 뒤로가기: 앱처럼 "홈 ← 지금 화면" 두 단계만 기록에 남긴다.
-//   다른 화면에서 뒤로가기 → 홈 / 홈에서 뒤로가기 → 앱 종료 (브라우저에서는 이전 사이트)
 function go(hash) {
   const toHome = hash === "#/" || hash === "#";
   if (toHome) {
     if (route() === "home") return;
-    if (history.state?.sub) history.back(); // 기록상 바로 앞이 홈
-    else location.replace("#/");
-    return;
+    if (history.state?.sub && ours()) return history.back(); // 기록상 바로 앞이 홈
+    history.replaceState({ s: SESSION }, "", "#/");
+    return show();
   }
-  if (route() === "home") history.pushState({ sub: true }, "", hash);
-  else history.replaceState({ sub: true }, "", hash); // 화면끼리 옮겨 다녀도 기록이 쌓이지 않게
-  render();
-  window.scrollTo(0, 0);
+  if (route() === "home") history.pushState({ s: SESSION, sub: true }, "", hash);
+  else history.replaceState({ s: SESSION, sub: true }, "", hash); // 화면끼리 옮겨 다녀도 기록이 쌓이지 않게
+  show();
 }
+
+window.addEventListener("popstate", () => {
+  if (ours()) return show();
+  // 예전 기록이면 계속 뒤로 간다. 더 갈 곳이 없으면 그 자리를 홈으로 삼는다.
+  const before = location.href;
+  history.back();
+  setTimeout(() => {
+    if (location.href === before && !ours()) {
+      history.replaceState({ s: SESSION }, "", "#/");
+      show();
+    }
+  }, 300);
+});
 
 document.addEventListener("click", (ev) => {
   const a = ev.target.closest('a[href^="#"]');
@@ -679,11 +696,13 @@ document.addEventListener("click", (ev) => {
   go(a.getAttribute("href"));
 });
 
-// 다른 화면 주소로 바로 열었을 때도 뒤로가기가 홈으로 가도록 홈을 앞에 끼워 둔다.
-if (route() !== "home") {
+// 시작할 때 지금 기록에 표식을 단다. 다른 화면 주소로 바로 열었으면 홈을 앞에 끼워 둔다.
+if (route() === "home") {
+  history.replaceState({ s: SESSION }, "", location.hash || "#/");
+} else {
   const here = location.hash;
-  history.replaceState(null, "", "#/");
-  history.pushState({ sub: true }, "", here);
+  history.replaceState({ s: SESSION }, "", "#/");
+  history.pushState({ s: SESSION, sub: true }, "", here);
 }
 
 // 다른 앱을 보다가 돌아오면 새 내용을 받아온다.
