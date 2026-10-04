@@ -329,7 +329,7 @@ function newsCard(n) {
 // ---------------------------------------------------------------
 // 입력 창 (관리자 로그인, 사진 올리기)
 // ---------------------------------------------------------------
-function openForm({ title, fields, values = {}, submitLabel = "저장", onSubmit, onDelete }) {
+function openForm({ title, note = "", fields, values = {}, submitLabel = "저장", onSubmit, onDelete }) {
   const inputs = fields
     .map((f) => {
       const v = values[f.name] ?? "";
@@ -348,6 +348,7 @@ function openForm({ title, fields, values = {}, submitLabel = "저장", onSubmit
   $dialog.innerHTML = `
     <form method="dialog">
       <h2>${esc(title)}</h2>
+      ${note ? `<p class="notice">${esc(note)}</p>` : ""}
       ${inputs}
       <div class="actions">
         ${onDelete ? `<button type="button" class="btn danger" data-act="delete" style="margin-right:auto">삭제</button>` : ""}
@@ -386,23 +387,53 @@ function openForm({ title, fields, values = {}, submitLabel = "저장", onSubmit
 }
 
 // ---------------------------------------------------------------
-// 사진 올리기: 휴대폰 사진(수 MB)을 그대로 보내면 느리므로 브라우저에서 줄여서 보낸다.
+// 사진 올리기: 원본 그대로 보낸다. 한 장에 8MB 까지. (apps-script/Code.gs 의 MAX_BYTES 와 같게)
 // ---------------------------------------------------------------
-async function shrink(file, maxSide = 1600) {
-  const img = await createImageBitmap(file, { imageOrientation: "from-image" });
-  const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
-  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.85);
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const SENDABLE = /^image\/(jpeg|png|webp)$/;
+const mb = (n) => `${(n / 1024 / 1024).toFixed(1)}MB`;
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error("사진을 읽지 못했습니다."));
+    r.readAsDataURL(file);
+  });
 }
 
-function uploadPhotos(files) {
-  if (!files.length) return;
+// JPG·PNG·WEBP 는 원본 그대로. 그 밖의 형식(HEIC 등)은 브라우저가 열 수 있으면 같은 크기의 JPG 로 바꾼다.
+async function originalPhoto(file) {
+  if (SENDABLE.test(file.type)) return fileToDataUrl(file);
+  let img;
+  try {
+    img = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    throw new Error("이 사진 형식은 올릴 수 없어요. JPG 나 PNG 사진을 골라 주세요.");
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  canvas.getContext("2d").drawImage(img, 0, 0);
+  const url = canvas.toDataURL("image/jpeg", 0.92);
+  if ((url.length * 3) / 4 > MAX_PHOTO_BYTES) throw new Error("JPG 로 바꾸니 8MB 를 넘어요.");
+  return url;
+}
+
+function uploadPhotos(picked) {
+  if (!picked.length) return;
+  const files = picked.filter((f) => f.size <= MAX_PHOTO_BYTES);
+  const tooBig = picked.filter((f) => f.size > MAX_PHOTO_BYTES);
+  const bigNote = tooBig.length
+    ? `8MB 가 넘는 사진 ${tooBig.length}장은 올리지 않아요: ${tooBig.map((f) => `${f.name} (${mb(f.size)})`).join(", ")}`
+    : "";
+  if (!files.length) {
+    return showNotice("사진이 너무 커요", `사진은 한 장에 8MB 까지 올릴 수 있어요.\n${bigNote}`);
+  }
   const albums = albumList().filter((a) => a.key !== NO_ALBUM).map((a) => a.name);
   openForm({
-    title: `사진 ${files.length}장 올리기`,
+    title: `사진 ${files.length}장 올리기 (원본, ${mb(files.reduce((n, f) => n + f.size, 0))})`,
+    note: bigNote,
     submitLabel: "올리기",
     fields: [
       { name: "album", label: "사진첩 이름 (기존 사진첩을 고르거나 새 이름을 쓰세요. 비우면 '기타 사진')", placeholder: "예: 2026 여름 수련회", suggestions: albums, autocomplete: "off" },
@@ -416,7 +447,7 @@ function uploadPhotos(files) {
       for (const f of files) {
         if (status()) status().textContent = `올리는 중… (${done + 1}/${files.length}) 앱을 닫지 마세요.`;
         try {
-          await data.uploadPhoto({ dataUrl: await shrink(f), album, caption });
+          await data.uploadPhoto({ dataUrl: await originalPhoto(f), album, caption });
           done++;
         } catch (e) {
           if (e.message === data.CONNECT_HELP) {
@@ -454,6 +485,7 @@ function openPhoto(p, list = [p]) {
       </div>
       <div class="lb-caption"></div>
       <div class="meta lb-meta"></div>
+      <a class="lb-orig meta" target="_blank" rel="noopener" hidden>원본 보기·내려받기 ↗</a>
       <div class="actions">
         ${editable ? `<button type="button" class="btn danger" data-act="del" style="margin-right:auto">삭제</button>` : ""}
         <button type="submit" class="btn">닫기</button>
@@ -462,7 +494,11 @@ function openPhoto(p, list = [p]) {
   const img = $dialog.querySelector(".lb-stage img");
   const show = () => {
     const cur = list[i];
-    img.src = data.photoUrl(cur.id, 1600);
+    img.src = data.photoUrl(cur.id, 2400);
+    const orig = $dialog.querySelector(".lb-orig");
+    const driveLink = /^[\w-]{20,}$/.test(cur.id) ? `https://drive.google.com/file/d/${encodeURIComponent(cur.id)}/view` : "";
+    orig.hidden = !driveLink;
+    orig.href = driveLink || "#";
     img.alt = cur.caption || "";
     $dialog.querySelector(".lb-caption").textContent = cur.caption || "";
     $dialog.querySelector(".lb-meta").textContent = [cur.album, fmtDate(cur.date), list.length > 1 ? `${i + 1} / ${list.length}` : ""].filter(Boolean).join(" · ");
@@ -568,15 +604,19 @@ function renderHeader() {
 }
 
 // 연결 문제처럼 긴 안내는 잠깐 뜨는 알림 대신 창으로 보여 준다.
-function showHelp(msg) {
+function showNotice(title, msg, extra = "") {
   $dialog.innerHTML = `
     <form method="dialog">
-      <h2>⚠️ 사진 올리기 연결 확인</h2>
-      <p>${esc(msg).replace(/ (?=[①②③])/g, "<br>")}</p>
-      <p class="meta">자세한 방법은 README 의 "문제 해결"을 참고하세요.</p>
+      <h2>⚠️ ${esc(title)}</h2>
+      <p class="prewrap">${esc(msg)}</p>
+      ${extra}
       <div class="actions"><button type="submit" class="btn primary">확인</button></div>
     </form>`;
   if (!$dialog.open) $dialog.showModal();
+}
+
+function showHelp(msg) {
+  showNotice("사진 올리기 연결 확인", msg.replace(/ (?=[①②③])/g, "\n"), `<p class="meta">자세한 방법은 README 의 "문제 해결"을 참고하세요.</p>`);
 }
 
 function login() {

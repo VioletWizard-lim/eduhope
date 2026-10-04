@@ -146,7 +146,7 @@ function upload_(req, user) {
   const m = /^data:(image\/(jpeg|png|webp));base64,(.+)$/.exec(String(req.dataUrl || ""));
   if (!m) throw new Error("사진 형식이 올바르지 않습니다.");
   const bytes = Utilities.base64Decode(m[3]);
-  if (bytes.length > MAX_BYTES) throw new Error("사진이 너무 큽니다.");
+  if (bytes.length > MAX_BYTES) throw new Error("사진은 한 장에 8MB 까지 올릴 수 있어요.");
 
   const album = text_(req.album, 60).replace(/^'/, "");
   const caption = text_(req.caption, 200);
