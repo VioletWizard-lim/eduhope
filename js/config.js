@@ -4,7 +4,7 @@
 //   - 시트는 [공유 → 일반 액세스: 링크가 있는 모든 사용자 (뷰어)] 로 되어 있어야 합니다.
 //   - 내용은 시트에서 고치면 앱에 자동으로 나타납니다.
 //   - 비어 있으면 예시 내용으로 동작하는 "미리보기 모드"가 됩니다.
-export const SHEET_URL = "";
+export const SHEET_URL = "https://docs.google.com/spreadsheets/d/1IIWWV4WD2KGCsHcmi3l7mX3xAnTOPPjy/edit";
 
 // (선택, 보통은 비워 두세요)
 // 앱 안에서 아이디/비밀번호로 로그인해 편집하고 싶을 때만 apps-script/Code.gs 를 시트에 설치하고
