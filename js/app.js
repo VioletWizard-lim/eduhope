@@ -634,7 +634,8 @@ $view.addEventListener("input", (ev) => {
 function renderHeader() {
   const refreshBtn = `<button class="btn small" id="refresh" ${state.loading ? "disabled" : ""} aria-label="새로고침">${state.loading ? "…" : "↻"}</button>`;
   // 캘린더·기도문 등은 구글 시트에서 편집한다. 시트 편집 권한이 있는 사람만 고칠 수 있다.
-  const sheetBtn = SHEET_URL ? `<a class="btn small" href="${esc(SHEET_URL)}" target="_blank" rel="noopener">✏️ 편집</a>` : "";
+  // 구글 시트 바로가기는 로그인한 관리자에게만 보인다. (방문자에게는 시트를 드러내지 않음)
+  const sheetBtn = SHEET_URL ? `<a class="btn small" href="${esc(SHEET_URL)}" target="_blank" rel="noopener">시트</a>` : "";
   if (isAdmin()) {
     $account.innerHTML = `<span class="who">${esc(state.me.id)}</span>${refreshBtn}${sheetBtn}<button class="btn small" id="logout">로그아웃</button>`;
     $account.querySelector("#logout").onclick = async () => {
@@ -644,7 +645,7 @@ function renderHeader() {
       render();
     };
   } else {
-    $account.innerHTML = `${refreshBtn}${sheetBtn}${data.canUpload() ? `<button class="btn small" id="login" aria-label="관리자 로그인">🔑</button>` : ""}`;
+    $account.innerHTML = `${refreshBtn}${data.canUpload() ? `<button class="btn small" id="login" aria-label="관리자 로그인">🔑</button>` : ""}`;
     $account.querySelector("#login")?.addEventListener("click", login);
   }
   $account.querySelector("#refresh").onclick = refresh;
