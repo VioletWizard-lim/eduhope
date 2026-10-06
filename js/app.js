@@ -1,6 +1,6 @@
 import * as data from "./data.js";
 import { SHEET_URL } from "./config.js";
-import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, JOIN, YOUTUBE_ID, CATEGORIES, DIRECTION, HISTORY } from "./content.js";
+import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, JOIN, YOUTUBE_ID, CATEGORIES, DIRECTION, HISTORY, CONTACTS } from "./content.js";
 
 const $view = document.getElementById("view");
 const $account = document.getElementById("account");
@@ -190,7 +190,7 @@ const views = {
     const list = [...state.db.prayers].sort(byDateDesc);
     return `
       <div class="section-title">🙏 기도문</div>
-      ${list.length ? list.map((p) => prayerCard(p)).join("") : `<div class="card empty">등록된 기도문이 없습니다.</div>`}
+      ${list.length ? `<p class="meta">제목을 누르면 기도문이 펼쳐져요.</p>${list.map(prayerItem).join("")}` : `<div class="card empty">등록된 기도문이 없습니다.</div>`}
     `;
   },
 
@@ -264,15 +264,23 @@ const views = {
       <p>${esc(LOCAL_INTRO)}</p>
       <div class="groups">
         ${LOCAL_GROUPS.map((g) => `<div class="group-row"><div class="region">${esc(g.region)}</div>
-          <div class="chips">${g.groups.map((n) => `<span class="chip">${esc(n)}</span>`).join("")}</div></div>`).join("")}
+          <div class="chips">${g.groups.map((n) => `<button class="chip tap" data-group="local:${esc(n)}">${esc(n)}</button>`).join("")}</div></div>`).join("")}
       </div>
 
       <div class="section-title" style="margin-top:24px">🍎 전문모임</div>
       <p>${esc(SPECIAL_INTRO)}</p>
-      <div class="chips">${SPECIAL_GROUPS.map((n) => `<span class="chip">${esc(n)}</span>`).join("")}</div>
+      <div class="chips">${SPECIAL_GROUPS.map((n) => `<button class="chip tap" data-group="special:${esc(n)}">${esc(n)}</button>`).join("")}</div>
 
-      <p class="notice" style="margin-top:16px">※ 각 모임 대표의 연락처를 알고자 하시는 분은 기윤실교사모임 공식 연락처인
+      <p class="notice" style="margin-top:16px">※ 모임 이름을 누르면 그 모임 대표의 연락처를 볼 수 있어요.
+        그 밖의 문의는 기윤실교사모임 공식 연락처인
         <a href="tel:${ORG.phone.replace(/-/g, "")}"><b>${esc(ORG.phone)}</b></a>로 연락 부탁드립니다.</p>
+
+      <details class="staff">
+        <summary><b>섬김이</b> <span class="meta">모임의 건강한 성장을 위해 앞장서서 실무와 사역을 일구어가는 섬김이들</span></summary>
+        <table class="staff-table">
+          ${CONTACTS.staff.map((c) => `<tr><td>${esc(c.role)}</td><td><b>${esc(c.rep)}</b></td><td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td></tr>`).join("")}
+        </table>
+      </details>
 
       <h3>바로가기</h3>
       ${LINKS.filter((l) => l.url).map(linkButton).join("")}
@@ -317,6 +325,53 @@ function albumList() {
   return [...map.values()].sort((a, b) => (a.key === NO_ALBUM) - (b.key === NO_ALBUM) || b.date.localeCompare(a.date));
 }
 
+// 모임 이름 → 대표 연락처. 띄어쓰기·기호를 빼고 비교하고, keys 낱말이 들어 있어도 같은 모임으로 본다.
+const norm = (t) => String(t).replace(/[\s\-·()]/g, "");
+// 찾는 순서: 이름이 같은 것 → keys 낱말이 맞는 것 → 이름 일부가 겹치는 것
+// (예: '양주'가 '구리남양주'보다 keys 에 '양주'가 있는 '동두천양주'로 먼저 가도록)
+function findContact(kind, group) {
+  const g = norm(group);
+  const list = CONTACTS[kind];
+  return (
+    list.find((c) => norm(c.name) === g) ||
+    list.find((c) => (c.keys || []).some((k) => g === norm(k) || g.includes(norm(k)))) ||
+    list.find((c) => g.includes(norm(c.name)) || norm(c.name).includes(g))
+  );
+}
+
+function contactLine(label, c) {
+  return `<div class="contact">
+    <span class="meta">${esc(label)}</span>
+    <b>${esc(c.rep)}</b>
+    <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>
+    <button type="button" class="btn small" data-copy="${esc(c.email)}">복사</button>
+  </div>`;
+}
+
+function openContact(kind, group) {
+  const c = findContact(kind, group);
+  const area = kind === "local" && c?.area ? CONTACTS.staff.find((s) => s.area === c.area) : null;
+  $dialog.innerHTML = `
+    <form method="dialog">
+      <h2>${esc(group)} ${kind === "local" ? "지역모임" : ""}</h2>
+      ${c ? contactLine(kind === "local" ? "지역 대표" : "모임 대표", c) : `<p>아직 등록된 대표 연락처가 없어요.</p>`}
+      ${area ? contactLine(`${c.area} 권역대표`, area) : ""}
+      <p class="meta">연락이 닿지 않으면 공식 연락처 <a href="tel:${ORG.phone.replace(/-/g, "")}">${esc(ORG.phone)}</a> 로 문의해 주세요.</p>
+      <div class="actions"><button type="submit" class="btn primary">닫기</button></div>
+    </form>`;
+  $dialog.querySelectorAll("[data-copy]").forEach((b) => {
+    b.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(b.dataset.copy);
+        toast("이메일 주소를 복사했어요.");
+      } catch {
+        toast(b.dataset.copy);
+      }
+    };
+  });
+  $dialog.showModal();
+}
+
 function linkButton(l) {
   const internal = l.url.startsWith("#/");
   const href = internal ? l.url : safeUrl(l.url);
@@ -350,8 +405,21 @@ function prayerCard(p, preview = false) {
     <h4>${esc(p.title)}</h4>
     <div class="meta">${fmtDate(p.date)}</div>
     <div class="prewrap" style="margin-top:8px">${esc(body)}</div>
-    ${preview ? `<a href="#/prayers" class="meta">기도문 모두 보기 →</a>` : ""}
+    ${preview ? `<a href="#/prayers/${encodeURIComponent(p.id)}" class="meta">이어서 읽기 · 기도문 모두 보기 →</a>` : ""}
   </div>`;
+}
+
+// 기도문 목록: 제목만 보이고 누르면 펼친다.
+// 처음에는 주소로 고른 기도문(홈에서 '이어서 읽기') 또는 가장 최근 기도문 하나만 펼쳐 둔다.
+// 펼친 상태는 새로고침(↻)으로 다시 그려도 그대로 유지한다.
+function prayerItem(p, i) {
+  if (!state.prayerOpen) state.prayerOpen = new Set([routeParam() || p.id]);
+  if (i === 0 && routeParam()) state.prayerOpen.add(routeParam()); // 홈에서 '이어서 읽기'로 온 기도문
+  const open = state.prayerOpen.has(p.id);
+  return `<details class="card prayer" data-prayer="${esc(p.id)}" ${open ? "open" : ""}>
+    <summary><h4>${esc(p.title)}</h4><span class="meta">${fmtDate(p.date)}</span></summary>
+    <div class="prewrap">${esc(p.body)}</div>
+  </details>`;
 }
 
 function newsCard(n) {
@@ -609,6 +677,10 @@ $view.addEventListener("click", (ev) => {
     state.cal.selected = t.dataset.day;
     return render();
   }
+  if (t.dataset.group) {
+    const i = t.dataset.group.indexOf(":");
+    return openContact(t.dataset.group.slice(0, i), t.dataset.group.slice(i + 1));
+  }
   if (t.dataset.cat !== undefined) {
     // 구분 범례: 누르면 그 구분만 보기 (여러 개 고를 수 있음), '전체 보기'로 해제
     const k = t.dataset.cat;
@@ -633,6 +705,18 @@ $view.addEventListener("click", (ev) => {
     }
   }
 });
+
+$view.addEventListener(
+  "toggle",
+  (ev) => {
+    const id = ev.target.dataset?.prayer;
+    if (!id) return;
+    state.prayerOpen ||= new Set();
+    if (ev.target.open) state.prayerOpen.add(id);
+    else state.prayerOpen.delete(id);
+  },
+  true,
+);
 
 $view.addEventListener("change", (ev) => {
   if (ev.target.dataset.act === "upload") {

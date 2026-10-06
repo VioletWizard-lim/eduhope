@@ -311,3 +311,28 @@ button.chip { cursor: pointer; }
 .era[open] summary::after { content: " ▴"; }
 .era ul { margin: 6px 0 0; padding-left: 18px; font-size: 15px; }
 .era li + li { margin-top: 3px; }
+
+/* ---------- 소개: 모임 대표 연락처 ---------- */
+.chip.tap { cursor: pointer; color: var(--text); }
+.chip.tap:hover { border-color: var(--sage-strong); }
+.contact {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+.contact .meta { grid-column: 1 / -1; font-size: 13px; }
+.contact b { grid-column: 1; font-size: 17px; }
+.contact a { grid-column: 1; word-break: break-all; }
+.contact .btn { grid-column: 2; grid-row: 2 / 4; }
+.staff { margin-top: 16px; }
+.staff summary { cursor: pointer; }
+.staff-table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 14px; }
+.staff-table td { padding: 7px 4px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.staff-table td:last-child { word-break: break-all; }
+
+/* ---------- 기도문 펼치기 ---------- */
+.prayer summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.prayer summary::-webkit-details-marker { display: none; }
+.prayer summary h4 { margin: 0; flex: 1 1 auto; }
+.prayer summary::after { content: "펼치기 ▾"; font-size: 13px; color: var(--sage-strong); margin-left: auto; }
+.prayer[open] summary::after { content: "접기 ▴"; }
+.prayer .prewrap { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); line-height: 1.8; }
