@@ -186,7 +186,7 @@ export const TABS = {
   events: { name: "캘린더", cols: { 제목: "title", 구분: "category", 분류: "category", 시작일: "date", 날짜: "date", 종료일: "endDate", 시간: "time", 장소: "place", 메모: "memo" } },
   prayers: { name: "기도문", cols: { 제목: "title", 날짜: "date", 원본링크: "url", 원본: "url", 링크: "url", 내용: "body", 기도문: "body" } },
   newsletters: { name: "소식지", cols: { 제목: "title", 발행일: "date", 날짜: "date", 요약: "summary", 링크: "url" } },
-  donors: { name: "후원자", cols: { 이름: "name", 구분: "type", 시작연도: "since" } },
+  donors: { name: "후원자", cols: { 이름: "name", 구좌: "units", 구좌수: "units", 구분: "type", 시작연도: "since" } },
   photos: { name: "사진", cols: { "사진 링크": "link", 링크: "link", 사진: "link", 앨범: "album", 설명: "caption", 날짜: "date" } },
   settings: { name: "설정", cols: { 항목: "key", 값: "value" } },
 };
@@ -293,8 +293,9 @@ function sample() {
     prayers: [{ id: "p1", title: "학교를 위한 기도 (예시)", date: d(-3), body: "(예시 기도문입니다.)\n\n주님, 오늘도 교실에서 만나는 아이들을 주님의 눈으로 바라보게 하소서." }],
     newsletters: [{ id: "n1", title: "소식지 예시호", date: d(-10), summary: "실제 소식지 제목과 링크로 바꿔 주세요.", url: "" }],
     donors: [
-      { id: "x1", name: "홍길동 (예시)", type: "개인", since: "2024" },
-      { id: "x2", name: "○○교회 (예시)", type: "교회", since: "2023" },
+      { id: "x1", name: "홍길동 (예시)", units: "5" },
+      { id: "x2", name: "김예시 (예시)", units: "2" },
+      { id: "x3", name: "이예시 (예시)", units: "1" },
     ],
     photos: [
       { id: svg("#8fb174", "수련회 (예시)"), album: "2026 수련회", caption: "", date: d(-5) },
