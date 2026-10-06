@@ -1,6 +1,6 @@
 import * as data from "./data.js";
 import { SHEET_URL } from "./config.js";
-import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, JOIN, YOUTUBE_ID, CATEGORIES, DIRECTION, HISTORY, CONTACTS } from "./content.js";
+import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, VISIT_FORM_URL, JOIN, YOUTUBE_ID, CATEGORIES, DIRECTION, HISTORY, CONTACTS } from "./content.js";
 
 const $view = document.getElementById("view");
 const $account = document.getElementById("account");
@@ -92,7 +92,7 @@ const views = {
       </div>
       <div class="cta-row">
         <a class="btn primary" href="#/join">회원가입 안내</a>
-        <a class="btn" href="${esc(LINKS[0].url)}" target="_blank" rel="noopener">가보고 싶어요 ↗</a>
+        <a class="btn" href="${esc(VISIT_FORM_URL)}" target="_blank" rel="noopener">가보고 싶어요 ↗</a>
       </div>
 
       <h3>다가오는 일정</h3>
@@ -296,7 +296,6 @@ const views = {
 
       <h3>바로가기</h3>
       ${LINKS.filter((l) => l.url).map(linkButton).join("")}
-      <p class="meta">원본 사이트: <a href="${ORG.site}" target="_blank" rel="noopener">${ORG.site}</a></p>
     `;
   },
 

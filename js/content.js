@@ -33,14 +33,14 @@ export const SPECIAL_INTRO =
   "전문모임은 지역모임에서 쌓은 영성을 바탕으로, 그 위에 전문성을 더하고자 하는 " +
   "선생님들이 모여 함께 고민하고 연구하는 모임입니다.";
 
-// 사이트의 바로가기 버튼들. url 이 비어 있으면 버튼을 숨긴다.
+// 소개 화면 '바로가기' 버튼들 (이 순서대로). url 이 비어 있으면 버튼을 숨긴다.
 // "#/" 로 시작하면 앱 안의 화면으로 이동한다.
+export const VISIT_FORM_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLSdrdEePXdIANcro76an9vAiJzvpUa8gneEdYfJdNWAEHte4OA/viewform";
 export const LINKS = [
-  { label: "기윤실교사모임 가보고 싶어요", url: "https://docs.google.com/forms/d/e/1FAIpQLSdrdEePXdIANcro76an9vAiJzvpUa8gneEdYfJdNWAEHte4OA/viewform" },
-  { label: "모임 활동 소식 (네이버 카페 가입)", url: "https://cafe.naver.com/eduhope1992" },
   { label: "회원 가입 안내", url: "#/join" },
-  { label: "기윤실교사모임에 오신 선생님을 환영합니다! (환영 게시판)", url: "https://padlet.com/eduhope1992/padlet-ub9bf0fdnv37hysp" },
-  { label: "선업튀 \"선생님 업고 튀어\" 영상 (YouTube)", url: "https://youtu.be/sBQ-WjGYvF0" },
+  { label: "기윤실교사모임의 거의 모든 것", url: "https://sites.google.com/view/eduhope2024" },
+  { label: "기윤실교사모임 가보고 싶어요", url: VISIT_FORM_URL },
 ];
 
 // 소개 화면에 넣는 유튜브 영상 ID
