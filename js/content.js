@@ -33,29 +33,6 @@ export const SPECIAL_INTRO =
   "전문모임은 지역모임에서 쌓은 영성을 바탕으로, 그 위에 전문성을 더하고자 하는 " +
   "선생님들이 모여 함께 고민하고 연구하는 모임입니다.";
 
-export const LOCAL_GROUPS = [
-  { region: "서울", groups: ["강서", "동대문", "중랑", "노원", "성북", "강남"] },
-  { region: "경기 서부", groups: ["파주", "일산", "김포", "부천"] },
-  { region: "경기 동부", groups: ["여주이천", "하남", "구리남양주", "성남", "양평", "청주"] },
-  { region: "경기 남부", groups: ["광명", "시흥", "용인", "안산", "안양", "군포", "수원"] },
-  { region: "경기 북부", groups: ["의정부포천", "동두천", "양주"] },
-  { region: "인천", groups: ["강화", "제물포", "부평", "남동연수", "서구", "영종"] },
-  { region: "평택", groups: ["평택", "안성", "송탄오산", "서산"] },
-  { region: "기타", groups: ["세종", "광주(전남)"] },
-];
-
-export const SPECIAL_GROUPS = [
-  "특수교육 (기특한 모임)",
-  "기독 보건교사 (기봄)",
-  "기독 유치원교사 (기유미)",
-  "꿈사랑 배움터",
-  "통일바람",
-  "좋은학교 만들기",
-  "날티놀티",
-  "기상모임",
-  "비전코디",
-];
-
 // 사이트의 바로가기 버튼들. url 이 비어 있으면 버튼을 숨긴다.
 // "#/" 로 시작하면 앱 안의 화면으로 이동한다.
 export const LINKS = [
@@ -288,3 +265,12 @@ export const CONTACTS = {
     { role: "꿈사랑배움터", rep: "정윤석", email: "i-garit@hanmail.net" },
   ],
 };
+
+// 소개 화면의 지역모임·전문모임 목록은 위 연락처 표(CONTACTS)에서 만든다. (표가 최신 기준)
+// 모임을 더하거나 빼려면 CONTACTS 만 고치면 된다.
+const AREA_ORDER = ["서울", "경기서부", "경기남부", "경기동부", "경기북부", "인천", "평택", "충청"];
+const areaLabel = (a) => a.replace(/^경기(?=\S)/, "경기 ");
+export const LOCAL_GROUPS = [...new Set([...AREA_ORDER, ...CONTACTS.local.map((c) => c.area)])]
+  .map((area) => ({ region: areaLabel(area), groups: CONTACTS.local.filter((c) => c.area === area).map((c) => c.name) }))
+  .filter((g) => g.groups.length);
+export const SPECIAL_GROUPS = CONTACTS.special.map((c) => c.name);
