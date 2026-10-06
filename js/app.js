@@ -102,7 +102,7 @@ const views = {
       <h3>이번 기도문</h3>
       ${prayer ? prayerCard(prayer, true) : `<div class="card empty">등록된 기도문이 없습니다.</div>`}
 
-      ${photos.length ? `<h3>최근 사진</h3>${gallery(photos)}<a class="btn" href="#/photos" style="margin-top:8px">사진 더 보기 →</a>` : ""}
+      ${!HIDDEN_VIEWS.has("photos") && photos.length ? `<h3>최근 사진</h3>${gallery(photos)}<a class="btn" href="#/photos" style="margin-top:8px">사진 더 보기 →</a>` : ""}
 
       <h3>최근 소식지</h3>
       ${news ? newsCard(news) : `<div class="card empty">등록된 소식지가 없습니다.</div>`}
@@ -831,9 +831,12 @@ async function refresh() {
 // 라우팅
 // ---------------------------------------------------------------
 // 주소: #/화면이름 또는 #/화면이름/세부 (예: #/photos/2026%20수련회)
+// 지금 쓰지 않는 화면. 코드는 남겨 두고 메뉴·주소에서만 막는다. (다시 쓰려면 여기서 빼고 index.html 메뉴에 추가)
+const HIDDEN_VIEWS = new Set(["photos"]);
+
 function route() {
   const name = location.hash.replace(/^#\/?/, "").split(/[/?]/)[0] || "home";
-  return views[name] ? name : "home";
+  return views[name] && !HIDDEN_VIEWS.has(name) ? name : "home";
 }
 function routeParam() {
   const rest = location.hash.replace(/^#\/?/, "").split("?")[0].split("/").slice(1).join("/");
