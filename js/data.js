@@ -184,7 +184,7 @@ function previewData() {
 // 시트 탭 이름과 머리글(1행) → 앱에서 쓰는 이름
 export const TABS = {
   events: { name: "캘린더", cols: { 제목: "title", 구분: "category", 분류: "category", 시작일: "date", 날짜: "date", 종료일: "endDate", 시간: "time", 장소: "place", 메모: "memo" } },
-  prayers: { name: "기도문", cols: { 제목: "title", 날짜: "date", 내용: "body", 기도문: "body" } },
+  prayers: { name: "기도문", cols: { 제목: "title", 날짜: "date", 원본링크: "url", 원본: "url", 링크: "url", 내용: "body", 기도문: "body" } },
   newsletters: { name: "소식지", cols: { 제목: "title", 발행일: "date", 날짜: "date", 요약: "summary", 링크: "url" } },
   donors: { name: "후원자", cols: { 이름: "name", 구분: "type", 시작연도: "since" } },
   photos: { name: "사진", cols: { "사진 링크": "link", 링크: "link", 사진: "link", 앨범: "album", 설명: "caption", 날짜: "date" } },
@@ -232,7 +232,9 @@ export function parseGviz(text, def) {
     labels = rows[0].map((x) => x.trim());
     rows = rows.slice(1);
   }
-  const keys = labels.map((l) => def.cols[l.replace(/\s*\(.*\)$/, "")] || def.cols[l] || null);
+  // 머리글은 끝의 (설명)과 띄어쓰기를 무시하고 찾는다. ("원본 링크" = "원본링크")
+  const find = (l) => def.cols[l] || def.cols[l.replace(/\s/g, "")] || null;
+  const keys = labels.map((l) => find(l.replace(/\s*\(.*\)$/, "")) || find(l));
   return rows
     .map((r, i) => {
       const o = { id: `${def.name}-${i}` };
