@@ -1,5 +1,5 @@
 // 오프라인에서도 앱 화면이 열리도록 기본 파일을 캐시한다. (데이터는 Firestore 가 따로 관리)
-const CACHE = "eduhope-v16";
+const CACHE = "eduhope-v17";
 const ASSETS = ["./", "index.html", "css/style.css", "js/app.js", "js/data.js", "js/content.js", "js/config.js", "icons/icon.svg", "manifest.webmanifest"];
 
 self.addEventListener("install", (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS))));
