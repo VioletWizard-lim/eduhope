@@ -67,8 +67,12 @@ function normalize(d) {
     newsletters: d?.newsletters || [],
     donors: d?.donors || [],
     photos: d?.photos || [],
+    settings: d?.settings || [],
   };
 }
+
+// 시트 '설정' 탭의 값 (항목 | 값)
+const setting = (key) => (state.db.settings.find((r) => r.key === key)?.value || "").trim();
 
 // ---------------------------------------------------------------
 // 화면들
@@ -203,22 +207,30 @@ const views = {
   },
 
   donors() {
-    const head = `<div class="section-title">💚 후원자 명단</div>
-      <p class="meta">기윤실교사모임을 위해 기도와 물질로 함께해 주시는 분들께 감사드립니다.</p>`;
-    const q = state.donorQuery.toLowerCase();
+    const asOf = setting("후원자 명단 기준일");
+    const head = `<div class="section-title">💚 후원자</div>
+      <p class="donor-slogan">함께, 기쁘게, 용기있게</p>
+      <h3 class="donor-title">기윤실교사모임 정기후원금 입금자 명단</h3>
+      <p class="meta">${asOf ? `(${esc(asOf)} 현재 / ` : "("}입금자는 가나다순으로 정리되어 있습니다.)</p>`;
+    const q = state.donorQuery.trim().toLowerCase();
     const list = state.db.donors.filter((d) => !q || (d.name || "").toLowerCase().includes(q)).sort((a, b) => (a.name || "").localeCompare(b.name || "", "ko"));
-    const groups = {};
-    for (const d of list) (groups[d.type || "기타"] ||= []).push(d);
+    // 구좌 칸이 있으면 구좌가 많은 순으로 묶고, 없으면 예전처럼 구분(개인·교회 등)으로 묶는다.
+    const unitsOf = (d) => parseInt(String(d.units || "").replace(/[^0-9]/g, ""), 10) || 0;
+    const groups = new Map();
+    for (const d of [...list].sort((a, b) => unitsOf(b) - unitsOf(a))) {
+      const n = unitsOf(d);
+      const label = n === 2 ? "*기본 구좌(2구좌)" : n ? `${n}구좌` : d.type || "후원자";
+      if (!groups.has(label)) groups.set(label, []);
+      groups.get(label).push(d);
+    }
     return `
       ${head}
-      <span class="meta">총 ${state.db.donors.length}명/곳</span>
-      <input class="search" type="search" placeholder="이름 검색" value="${esc(state.donorQuery)}" data-act="donor-search" style="margin-top:8px" />
-      ${Object.keys(groups).length
-        ? Object.entries(groups)
-            .map(([type, rows]) => `<h3>${esc(type)} (${rows.length})</h3>
-              <div class="chips">${rows.map((d) => `<span class="chip">${esc(d.name)}</span>`).join("")}</div>`)
-            .join("")
-        : `<div class="card empty">명단이 없습니다.</div>`}
+      <input class="search" type="search" placeholder="이름 검색" value="${esc(state.donorQuery)}" data-act="donor-search" />
+      ${groups.size
+        ? [...groups].map(([label, rows]) => `<h3 class="donor-tier">${esc(label)} <span class="meta">${rows.length}명</span></h3>
+              <p class="donor-names">${rows.map((d) => `<span>${esc(d.name)}</span>`).join(", ")}</p>`).join("")
+        : `<div class="card empty">${q ? "찾는 이름이 없습니다." : "명단이 없습니다."}</div>`}
+      <p class="meta" style="margin-top:16px">기도와 물질로 함께해 주시는 모든 분들께 감사드립니다. · 총 ${state.db.donors.length}명</p>
     `;
   },
 

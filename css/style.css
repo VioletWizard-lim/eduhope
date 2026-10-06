@@ -337,3 +337,12 @@ button.chip { cursor: pointer; }
 .prayer[open] summary::after { content: "접기 ▴"; }
 .prayer .prewrap { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); line-height: 1.8; }
 .prayer .orig-link { margin-top: 10px; }
+
+/* ---------- 후원자 명단 ---------- */
+.donor-slogan { margin: 0; color: var(--sage-strong); font-weight: 700; }
+.donor-title { margin-top: 4px; }
+.donor-title::before { content: ""; }
+.donor-tier { margin: 18px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.donor-tier::before { content: ""; }
+.donor-names { margin: 0; line-height: 1.9; word-break: keep-all; }
+.donor-names span { white-space: nowrap; }
