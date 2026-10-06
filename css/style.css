@@ -336,3 +336,4 @@ button.chip { cursor: pointer; }
 .prayer summary::after { content: "펼치기 ▾"; font-size: 13px; color: var(--sage-strong); margin-left: auto; }
 .prayer[open] summary::after { content: "접기 ▴"; }
 .prayer .prewrap { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); line-height: 1.8; }
+.prayer .orig-link { margin-top: 10px; }

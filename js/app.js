@@ -403,7 +403,7 @@ function prayerCard(p, preview = false) {
   const body = preview && (p.body || "").length > 160 ? p.body.slice(0, 160) + "…" : p.body;
   return `<div class="card">
     <h4>${esc(p.title)}</h4>
-    <div class="meta">${fmtDate(p.date)}</div>
+    <div class="meta">${fmtDate(p.date)}${safeUrl(p.url) ? ` · <a href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">원본 ↗</a>` : ""}</div>
     <div class="prewrap" style="margin-top:8px">${esc(body)}</div>
     ${preview ? `<a href="#/prayers/${encodeURIComponent(p.id)}" class="meta">이어서 읽기 · 기도문 모두 보기 →</a>` : ""}
   </div>`;
@@ -418,6 +418,7 @@ function prayerItem(p, i) {
   const open = state.prayerOpen.has(p.id);
   return `<details class="card prayer" data-prayer="${esc(p.id)}" ${open ? "open" : ""}>
     <summary><h4>${esc(p.title)}</h4><span class="meta">${fmtDate(p.date)}</span></summary>
+    ${safeUrl(p.url) ? `<a class="btn small orig-link" href="${esc(safeUrl(p.url))}" target="_blank" rel="noopener">원본 보기 ↗</a>` : ""}
     <div class="prewrap">${esc(p.body)}</div>
   </details>`;
 }
