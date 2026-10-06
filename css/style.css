@@ -280,3 +280,34 @@ button.chip { cursor: pointer; }
 .legend.off { opacity: .45; }
 .legend.reset { color: var(--sage-strong); }
 .cal-chip.more { background: transparent; color: var(--muted); }
+
+/* ---------- 소개: 추진방향 ---------- */
+.pillars { display: grid; gap: 10px; margin: 8px 0 12px; }
+@media (min-width: 640px) { .pillars { grid-template-columns: repeat(3, 1fr); } .pillars.two { grid-template-columns: 1fr 1fr; } }
+.pillar {
+  display: flex; flex-direction: column; gap: 4px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--line); border-top: 6px solid var(--sage); border-radius: var(--radius);
+}
+.pillar > b { font-size: 17px; }
+.pillar ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; }
+.pillar li + li { margin-top: 4px; }
+.plans { padding-left: 20px; }
+.plans > li { margin-bottom: 12px; }
+.plans ul { margin: 4px 0 0; padding-left: 18px; font-size: 15px; }
+.plans .pillars { margin-top: 8px; }
+.plans .pillar span { font-size: 14px; }
+
+/* ---------- 소개: 히스토리 (연표) ---------- */
+.history { position: relative; margin: 8px 0 16px; padding-left: 22px; }
+.history::before { content: ""; position: absolute; left: 6px; top: 6px; bottom: 6px; width: 2px; background: var(--sage); opacity: .5; }
+.era { position: relative; margin-bottom: 10px; }
+.era::before {
+  content: ""; position: absolute; left: -22px; top: 6px; width: 14px; height: 14px; border-radius: 999px;
+  background: var(--sage); border: 3px solid var(--bg);
+}
+.era summary { cursor: pointer; font-size: 17px; list-style: none; }
+.era summary::-webkit-details-marker { display: none; }
+.era summary::after { content: " ▾"; color: var(--muted); font-size: 13px; }
+.era[open] summary::after { content: " ▴"; }
+.era ul { margin: 6px 0 0; padding-left: 18px; font-size: 15px; }
+.era li + li { margin-top: 3px; }

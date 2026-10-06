@@ -1,6 +1,6 @@
 import * as data from "./data.js";
 import { SHEET_URL } from "./config.js";
-import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, JOIN, YOUTUBE_ID, CATEGORIES } from "./content.js";
+import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, JOIN, YOUTUBE_ID, CATEGORIES, DIRECTION, HISTORY } from "./content.js";
 
 const $view = document.getElementById("view");
 const $account = document.getElementById("account");
@@ -231,6 +231,29 @@ const views = {
       <p>${ORG.mission.map(esc).join("<br>")}</p>
       <h3>교사상</h3>
       <ol>${ORG.teacherIdeals.map((t) => `<li>${esc(t)}</li>`).join("")}</ol>
+
+      <h3>앞으로의 추진방향</h3>
+      <div class="pillars">
+        ${DIRECTION.pillars.map((p) => `<div class="pillar" style="border-top-color:${p.color}">
+          <b>${esc(p.title)}</b>
+          <span class="meta">${esc(p.focus)}</span>
+          <ul>${p.points.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+        </div>`).join("")}
+      </div>
+      <ol class="plans">
+        ${DIRECTION.plans.map((p) => `<li><b>${esc(p.title)}</b><ul>${p.items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></li>`).join("")}
+        <li><b>꿈섬 운영</b>
+          <div class="pillars two">${DIRECTION.kkumseom.map((k) => `<div class="pillar"><b>${esc(k.title)}</b><span>${esc(k.text)}</span></div>`).join("")}</div>
+        </li>
+      </ol>
+
+      <h3>히스토리</h3>
+      <div class="history">
+        ${HISTORY.map((h, i) => `<details class="era" ${i === 0 ? "open" : ""}>
+          <summary><b>${esc(h.title)}</b> <span class="meta">${esc(h.period)}</span></summary>
+          <ul>${h.items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul>
+        </details>`).join("")}
+      </div>
 
       <div class="video">
         <iframe src="https://www.youtube-nocookie.com/embed/${esc(YOUTUBE_ID)}" title="기윤실교사모임 선업튀 영상"
