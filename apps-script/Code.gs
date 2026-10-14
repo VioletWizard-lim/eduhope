@@ -514,6 +514,8 @@ function removeAdmin_(id) {
 //   바뀐 내용은 '학사 일정 기록' 탭에 쌓이고, 자동 확인 때 바뀐 게 있으면 메일로 알려 준다.
 // ===============================================================
 const SCHOOL_KEY_HEADER = "학사 일정 키";
+const SCHOOL_STATE_HEADER = "학사 일정 상태"; // "자동 ○○○○○○" = 원본을 따라 바뀜 / "직접 고침" = 손대지 않음
+const SCHOOL_LOCKED = "직접 고침";
 const SCHOOL_LOG_SHEET = "학사 일정 기록";
 const SCHOOL_CATEGORY = "그 외"; // 원본에 '구분' 칸이 없을 때 넣을 구분
 const SCHOOL_TRIGGER = "schoolSyncTrigger";
@@ -865,6 +867,13 @@ function schoolApply_(events, months) {
     width = keyCol + 1;
     head = sh.getRange(1, 1, 1, width).getValues()[0].map(normHead_);
   }
+  let stCol = head.indexOf(normHead_(SCHOOL_STATE_HEADER));
+  if (stCol < 0) {
+    stCol = width; // 그 옆에 '학사 일정 상태' 칸 (직접 고친 줄을 알아보는 데 쓴다)
+    sh.getRange(1, stCol + 1).setValue(SCHOOL_STATE_HEADER).setFontColor("#999999");
+    width = stCol + 1;
+    head = sh.getRange(1, 1, 1, width).getValues()[0].map(normHead_);
+  }
   const find = (names) => names.map((n) => head.indexOf(n)).find((i) => i >= 0);
   const c = {
     title: find(["제목"]),
@@ -912,10 +921,21 @@ function schoolApply_(events, months) {
   const adopt = (e) => {
     const list = manual[sameKey(e.start, e.title)];
     if (!list || !list.length) return false;
-    sh.getRange(list.shift() + 2, keyCol + 1).setValue(e.key);
+    const j = list.shift();
+    sh.getRange(j + 2, keyCol + 1).setValue(e.key);
+    // 직접 적어 둔 줄이 원본과 다르면(구분 등) 사람이 정한 것이므로 지킨다.
+    state[j] = sigRow(rows[j], e) === sigEvent(e) ? stamp(sigEvent(e)) : SCHOOL_LOCKED;
     return true;
   };
   let merged = 0;
+
+  // 직접 고친 줄 알아보기: 스크립트가 마지막으로 적은 값의 지문을 '학사 일정 상태' 칸에 남겨 두고,
+  // 다음에 볼 때 줄 내용이 그 지문과 다르면 사람이 고친 것 → '직접 고침' 으로 표시하고 다시는 건드리지 않는다.
+  const fieldsOf = (e) => FIELDS.filter((f) => c[f] !== undefined && e[f] !== undefined);
+  const sigRow = (row, e) => fieldsOf(e).map((f) => f + "=" + cell(row[c[f]], f)).join("\n");
+  const sigEvent = (e) => fieldsOf(e).map((f) => f + "=" + (e[f] || "")).join("\n");
+  const stamp = (sig) => "자동 " + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, sig)).replace(/[^A-Za-z0-9]/g, "").slice(0, 6);
+  const state = rows.map((row) => String(row[stCol] || "").trim());
 
   const lines = [];
   const now = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm");
@@ -927,6 +947,8 @@ function schoolApply_(events, months) {
     const key = String(row[keyCol]).trim();
     if (!key) return; // 직접 적은 일정
     have[key] = true;
+    // 직접 고친 줄은 원본이 바뀌거나 없어져도 그대로 둔다.
+    if (state[i] === SCHOOL_LOCKED) return;
     const e = byKey[key];
     // 같은 일정을 직접 적어 둔 줄이 있으면 그 줄을 남기고, 가져온 줄은 지운다.
     if (e && adopt(e)) {
@@ -943,6 +965,14 @@ function schoolApply_(events, months) {
       log("빠짐", { start: start, title: cell(row[c.title], "title") }, "원본에서 없어져 캘린더에서 뺐어요");
       return;
     }
+    const cur = sigRow(row, e);
+    const edited = state[i] ? state[i] !== stamp(cur) : cur !== sigEvent(e);
+    if (edited) {
+      state[i] = SCHOOL_LOCKED;
+      log("직접 고침", e, "캘린더에서 직접 고친 줄이라 앞으로 자동으로 바꾸지 않아요 ('학사 일정 상태' 칸을 지우면 다시 자동)");
+      return;
+    }
+    state[i] = stamp(sigEvent(e));
     const changes = [];
     FIELDS.forEach((f) => {
       // 원본에 없는 칸(달력 모양의 시간·장소·메모)은 캘린더에 적힌 걸 그대로 둔다.
@@ -967,6 +997,7 @@ function schoolApply_(events, months) {
     }
     return true;
   });
+  if (rows.length) sh.getRange(2, stCol + 1, rows.length, 1).setValues(state.map((v) => [v]));
   toDelete.reverse().forEach((r) => sh.deleteRow(r));
 
   if (fresh.length) {
@@ -975,6 +1006,7 @@ function schoolApply_(events, months) {
       FIELDS.forEach((f) => c[f] !== undefined && (row[c[f]] = toCell(f, e[f] || "")));
       if (c.cat !== undefined) row[c.cat] = e.cat || SCHOOL_CATEGORY;
       row[keyCol] = e.key;
+      row[stCol] = stamp(sigEvent(e));
       log("추가", e, [e.end && "~" + e.end, e.time, e.place].filter(Boolean).join(" "));
       return row;
     });
