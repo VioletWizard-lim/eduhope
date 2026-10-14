@@ -280,6 +280,7 @@ function onOpen() {
     .addItem("학사 일정 연결하기", "menuSchoolConnect")
     .addItem("학사 일정 지금 가져오기", "menuSchoolSyncNow")
     .addItem("학사 일정 다시 맞추기", "menuSchoolRealign")
+    .addItem("지운 학사 일정 되살리기", "menuSchoolRestore")
     .addItem("학사 일정 자동 가져오기 끄기", "menuSchoolStop")
     .addToUi();
 }
@@ -517,6 +518,8 @@ function removeAdmin_(id) {
 const SCHOOL_KEY_HEADER = "학사 일정 키";
 const SCHOOL_STATE_HEADER = "학사 일정 상태"; // "자동 ○○○○○○" = 원본을 따라 바뀜 / "직접 고침" = 손대지 않음
 const SCHOOL_LOCKED = "직접 고침";
+const SCHOOL_LIST_SHEET = "학사 일정 목록"; // (숨김) 캘린더에 넣은 적 있는 일정 키 — 사람이 지운 일정을 다시 넣지 않으려고
+const SCHOOL_GONE = "지움";
 const SCHOOL_LOG_SHEET = "학사 일정 기록";
 const SCHOOL_CATEGORY = "그 외"; // 원본에 '구분' 칸이 없을 때 넣을 구분
 const SCHOOL_TRIGGER = "schoolSyncTrigger";
@@ -997,9 +1000,22 @@ function schoolApply_(events, months, force) {
       log("바뀜", e, changes.join(", "));
     }
   });
+  // 캘린더에 넣은 적 있는데 지금 캘린더에 없는 일정 = 사람이 지운 것 → 다시 넣지 않는다.
+  const list = schoolList_(have);
+  let gone = 0;
   // 새 일정 중 직접 적어 둔 것과 같은 건 그 줄을 이어받는다. (줄을 지우기 전에 해야 줄 번호가 맞다)
   const fresh = events.filter((e) => {
     if (have[e.key]) return false;
+    const was = list.known[e.key];
+    if (was) {
+      if (was.status !== SCHOOL_GONE) {
+        was.status = SCHOOL_GONE;
+        was.changed = now;
+        log("지움", e, "캘린더에서 지운 일정이라 다시 넣지 않아요 (되살리려면 메뉴 '지운 학사 일정 되살리기')");
+      }
+      gone++;
+      return false;
+    }
     if (adopt(e)) {
       merged++;
       return false;
@@ -1027,8 +1043,52 @@ function schoolApply_(events, months, force) {
     lines.push([now, "처음 가져옴", "", fresh.length + "개 일정을 캘린더에 넣었어요", "이후 바뀌는 것부터 한 줄씩 적혀요"]);
   }
   if (merged) lines.push([now, "합침", "", merged + "개 일정", "직접 적어 둔 같은 일정(날짜·제목이 같음)과 하나로 합쳤어요"]);
+  // 목록 갱신: 지금 캘린더에 있는 키는 '있음', 지운 건 '지움'. 원본에도 캘린더에도 없는 키는 정리한다.
+  const inCal = {};
+  sh.getRange(2, keyCol + 1, Math.max(sh.getLastRow() - 1, 1), 1).getValues().forEach((r) => r[0] && (inCal[String(r[0]).trim()] = true));
+  const out = [];
+  const seenKey = {};
+  Object.keys(inCal).forEach((k) => {
+    seenKey[k] = true;
+    const old = list.known[k];
+    out.push([k, "있음", k.split("|")[0], k.split("|").slice(1).join("|"), old && old.status === "있음" ? old.changed : now]);
+  });
+  Object.keys(list.known).forEach((k) => {
+    const o = list.known[k];
+    if (seenKey[k] || o.status !== SCHOOL_GONE || !byKey[k]) return;
+    out.push([k, SCHOOL_GONE, k.split("|")[0], k.split("|").slice(1).join("|"), o.changed]);
+  });
+  schoolListWrite_(list.sheet, out);
   if (lines.length) schoolLog_(lines);
-  return { added: fresh.length, updated: updated, removed: toDelete.length - merged, merged: merged, lines: lines };
+  return { added: fresh.length, updated: updated, removed: toDelete.length - merged, merged: merged, gone: gone, lines: lines };
+}
+
+// 숨김 탭 '학사 일정 목록'을 읽는다. 처음이면 만들고, 지금 캘린더에 있는 키로 시작한다.
+function schoolList_(have) {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(SCHOOL_LIST_SHEET);
+  const known = {};
+  if (!sh) {
+    sh = ss.insertSheet(SCHOOL_LIST_SHEET);
+    sh.hideSheet();
+    Object.keys(have).forEach((k) => (known[k] = { status: "있음", changed: "" }));
+    return { sheet: sh, known: known };
+  }
+  const last = sh.getLastRow();
+  if (last > 1)
+    sh.getRange(2, 1, last - 1, 5)
+      .getValues()
+      .forEach((r) => {
+        const k = String(r[0]).trim();
+        if (k) known[k] = { status: String(r[1]).trim(), changed: r[4] };
+      });
+  return { sheet: sh, known: known };
+}
+
+function schoolListWrite_(sh, rows) {
+  sh.clearContents();
+  sh.getRange(1, 1, 1, 5).setValues([["학사 일정 키", "상태", "날짜", "제목", "바뀐 시각"]]).setFontWeight("bold");
+  if (rows.length) sh.getRange(2, 1, rows.length, 5).setValues(rows.map((r) => r.map((v) => (/^[=+\-@]/.test(String(v)) ? "'" + v : v))));
 }
 
 // '학사 일정 기록' 탭 맨 위(2번째 줄)에 최근 것부터 쌓는다. 2,000줄이 넘으면 오래된 것부터 지운다.
@@ -1071,7 +1131,7 @@ function schoolSync_(force) {
 }
 
 const schoolSummary_ = (r) =>
-  "추가 " + r.added + " · 바뀜 " + r.updated + " · 빠짐 " + r.removed + (r.merged ? " · 직접 적은 일정과 합침 " + r.merged : "") + " (원본 일정 " + r.total + "개" + (r.skipped ? ", 날짜를 못 읽어 건너뛴 줄 " + r.skipped + "개" : "") + ")";
+  "추가 " + r.added + " · 바뀜 " + r.updated + " · 빠짐 " + r.removed + (r.merged ? " · 직접 적은 일정과 합침 " + r.merged : "") + (r.gone ? " · 직접 지워서 안 넣은 일정 " + r.gone : "") + " (원본 일정 " + r.total + "개" + (r.skipped ? ", 날짜를 못 읽어 건너뛴 줄 " + r.skipped + "개" : "") + ")";
 
 function schoolInstallTrigger_() {
   ScriptApp.getProjectTriggers()
@@ -1186,6 +1246,34 @@ function menuSchoolRealign() {
   if (a !== ui.Button.YES && a !== ui.Button.NO) return;
   try {
     ui.alert("다시 맞췄어요", schoolSummary_(schoolSync_(a === ui.Button.YES ? "all" : "auto")), ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert(err.message);
+  }
+}
+
+// 캘린더에서 지운 학사 일정을 다시 넣는다. ('학사 일정 목록'에서 '지움' 표시를 없애고 가져오기)
+function menuSchoolRestore() {
+  const ui = SpreadsheetApp.getUi();
+  const sh = SpreadsheetApp.getActive().getSheetByName(SCHOOL_LIST_SHEET);
+  const last = sh ? sh.getLastRow() : 0;
+  const rows = last > 1 ? sh.getRange(2, 1, last - 1, 5).getValues() : [];
+  const goneRows = rows.filter((r) => String(r[1]).trim() === SCHOOL_GONE);
+  if (!goneRows.length) {
+    ui.alert("직접 지워서 빠져 있는 학사 일정이 없어요.");
+    return;
+  }
+  const list = goneRows.slice(0, 15).map((r) => "· " + r[2] + " " + r[3]).join("\n");
+  if (
+    ui.alert(
+      "지운 학사 일정 " + goneRows.length + "개",
+      list + (goneRows.length > 15 ? "\n…" : "") + "\n\n모두 캘린더에 다시 넣을까요?\n(하나만 되살리려면 숨김 탭 '" + SCHOOL_LIST_SHEET + "'에서 그 줄을 지우고 '지금 가져오기')",
+      ui.ButtonSet.YES_NO,
+    ) !== ui.Button.YES
+  )
+    return;
+  schoolListWrite_(sh, rows.filter((r) => String(r[1]).trim() !== SCHOOL_GONE));
+  try {
+    ui.alert("되살렸어요", schoolSummary_(schoolSync_()), ui.ButtonSet.OK);
   } catch (err) {
     ui.alert(err.message);
   }
