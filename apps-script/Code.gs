@@ -508,7 +508,7 @@ function removeAdmin_(id) {
 //   다른 시트(학사 일정)를 1시간마다 읽어 '캘린더' 탭에 반영한다.
 //   달력 모양(한 탭 = 한 달, 칸 색 = 구분)과 목록 모양(한 줄 = 일정 하나) 둘 다 읽는다.
 //   - 새 일정 → 캘린더 맨 아래에 추가
-//   - 시간·장소·메모·종료일이 바뀐 일정 → 그 줄을 고침 (구분 칸은 처음 넣을 때만 채우고 이후엔 손대지 않음)
+//   - 구분(달력 칸 색)·시간·장소·메모·종료일이 바뀐 일정 → 그 줄을 고침 (원본에 없는 칸은 손대지 않음)
 //   - 원본에서 없어진 일정 → 캘린더에서 뺌 (이미 지난 일정은 기록으로 남겨 둠)
 //   - 직접 적은 일정(맨 끝 '학사 일정 키' 칸이 빈 줄)은 절대 건드리지 않는다.
 //   바뀐 내용은 '학사 일정 기록' 탭에 쌓이고, 자동 확인 때 바뀐 게 있으면 메일로 알려 준다.
@@ -673,10 +673,11 @@ function schoolReadList_(source) {
       title: title,
       start: start,
       end: end && end > start ? end : "",
-      time: schoolTime_(get("time"), tz),
-      place: String(get("place")).trim(),
-      memo: String(get("memo")).trim(),
-      cat: String(get("cat")).trim(),
+      // 원본에 없는 칸은 undefined → 캘린더에 적힌 값을 지우지 않는다.
+      time: col.time === undefined ? undefined : schoolTime_(get("time"), tz),
+      place: col.place === undefined ? undefined : String(get("place")).trim(),
+      memo: col.memo === undefined ? undefined : String(get("memo")).trim(),
+      cat: col.cat === undefined ? undefined : String(get("cat")).trim(),
     });
   }
   const headers = Object.keys(col).map((k) => k + "=" + values[headRow][col[k]]);
@@ -697,20 +698,28 @@ function schoolDay_(v) {
   return d >= 1 && d <= 31 ? d : 0;
 }
 
-// 칸 색 → 구분 (CATEGORIES 색 중 가장 가까운 것, 흰색·회색이면 '그 외')
+// 칸 색 → 구분. 색의 '색상(hue)'이 가장 가까운 구분을 고른다. 흰색·회색이면 '그 외'.
+// (밝기까지 같이 비교하면 연보라빛 분홍(지역모임)이 번개(보라)로 잘못 잡힌다)
+function schoolHue_(hex) {
+  const m = String(hex).match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (!m) return null;
+  const [r, g, b] = [1, 2, 3].map((i) => parseInt(m[i], 16));
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  if (d < 16) return null; // 흰색·회색·검정 = 색 없음
+  let h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+}
+
 function schoolColorCat_(hex) {
-  const rgb = (h) => {
-    const m = String(h).match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
-    return m ? [1, 2, 3].map((i) => parseInt(m[i], 16)) : null;
-  };
-  const c = rgb(hex);
   const other = CATEGORIES[CATEGORIES.length - 1][0];
-  if (!c || Math.max(...c) - Math.min(...c) < 16) return other; // 흰색·회색·검정 = 색 없음
+  const h = schoolHue_(hex);
+  if (h === null) return other;
   let best = other;
   let bestD = Infinity;
-  CATEGORIES.forEach(([name, h]) => {
-    const k = rgb(h);
-    const d = (c[0] - k[0]) ** 2 + (c[1] - k[1]) ** 2 + (c[2] - k[2]) ** 2;
+  CATEGORIES.forEach(([name, color]) => {
+    const k = schoolHue_(color);
+    const d = Math.min(Math.abs(h - k), 360 - Math.abs(h - k));
     if (d < bestD) {
       bestD = d;
       best = name;
@@ -884,9 +893,13 @@ function schoolApply_(events, months) {
     }
     return /^[=+\-@]/.test(v) ? "'" + v : v; // 수식으로 바뀌지 않게
   };
-  const FIELDS = ["title", "start", "end", "time", "place", "memo"];
+  const FIELDS = ["title", "cat", "start", "end", "time", "place", "memo"];
   const byKey = {};
-  events.forEach((e) => (byKey[e.key] = e));
+  events.forEach((e) => {
+    // 구분은 앱 목록에 있는 이름만 쓴다 (원본에 구분 칸이 없으면 undefined → 처음 넣을 때 '그 외')
+    if (e.cat !== undefined && !CATEGORIES.some((x) => x[0] === e.cat)) e.cat = SCHOOL_CATEGORY;
+    byKey[e.key] = e;
+  });
 
   // 직접 적은 일정(키 없음)을 날짜+제목으로 찾아 둔다. 원본과 같은 일정이면 새로 넣지 않고 그 줄을 이어받는다.
   const sameKey = (start, title) => start + "|" + String(title).replace(/\s+/g, " ").trim();
@@ -936,7 +949,7 @@ function schoolApply_(events, months) {
       if (c[f] === undefined || e[f] === undefined) return;
       const before = cell(row[c[f]], f);
       if (before !== (e[f] || "")) {
-        changes.push({ title: "제목", start: "시작일", end: "종료일", time: "시간", place: "장소", memo: "메모" }[f] + ": " + (before || "(없음)") + " → " + (e[f] || "(없음)"));
+        changes.push({ title: "제목", cat: "구분", start: "시작일", end: "종료일", time: "시간", place: "장소", memo: "메모" }[f] + ": " + (before || "(없음)") + " → " + (e[f] || "(없음)"));
         sh.getRange(i + 2, c[f] + 1).setValue(toCell(f, e[f] || ""));
       }
     });
@@ -960,7 +973,7 @@ function schoolApply_(events, months) {
     const out = fresh.map((e) => {
       const row = new Array(width).fill("");
       FIELDS.forEach((f) => c[f] !== undefined && (row[c[f]] = toCell(f, e[f] || "")));
-      if (c.cat !== undefined) row[c.cat] = CATEGORIES.some((x) => x[0] === e.cat) ? e.cat : SCHOOL_CATEGORY;
+      if (c.cat !== undefined) row[c.cat] = e.cat || SCHOOL_CATEGORY;
       row[keyCol] = e.key;
       log("추가", e, [e.end && "~" + e.end, e.time, e.place].filter(Boolean).join(" "));
       return row;
