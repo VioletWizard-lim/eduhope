@@ -935,6 +935,11 @@ function schoolApply_(events, months) {
     });
     sh.getRange(sh.getLastRow() + 1, 1, out.length, width).setValues(out);
   }
+  // 처음 가져올 때는 일정마다 '추가'를 적으면 기록이 너무 길어지므로 한 줄로 요약한다.
+  if (!Object.keys(have).length && fresh.length) {
+    lines.length = 0;
+    lines.push([now, "처음 가져옴", "", fresh.length + "개 일정을 캘린더에 넣었어요", "이후 바뀌는 것부터 한 줄씩 적혀요"]);
+  }
   if (lines.length) schoolLog_(lines);
   return { added: fresh.length, updated: updated, removed: toDelete.length, lines: lines };
 }
@@ -948,8 +953,14 @@ function schoolLog_(lines) {
     sh.getRange(1, 1, 1, 5).setValues([["확인 시각", "변경", "날짜", "제목", "내용"]]).setFontWeight("bold");
     sh.setFrozenRows(1);
   }
+  // 칸 너비·줄바꿈 (탭을 처음 만든 뒤에도 매번 맞춰 둔다)
+  [150, 90, 95, 260, 300].forEach((w, i) => sh.setColumnWidth(i + 1, w));
   sh.insertRowsAfter(1, lines.length);
-  sh.getRange(2, 1, lines.length, 5).setValues(lines.map((l) => l.map((v) => (/^[=+\-@]/.test(String(v)) ? "'" + v : v))));
+  sh.getRange(2, 1, lines.length, 5)
+    .setValues(lines.map((l) => l.map((v) => (/^[=+\-@]/.test(String(v)) ? "'" + v : v))))
+    .setFontWeight("normal")
+    .setWrap(true)
+    .setVerticalAlignment("top");
   const extra = sh.getLastRow() - 2001;
   if (extra > 0) sh.deleteRows(2002, extra);
 }
