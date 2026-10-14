@@ -798,7 +798,8 @@ function schoolReadGrid_(sh, book) {
             break;
           }
         }
-        events.push({ title: title, start: start, end: end, time: "", place: "", memo: "", cat: schoolColorCat_(bg[er][c]) });
+        // 달력에는 시간·장소·메모 칸이 없으므로 비워 두지 않고 '모름'(undefined)으로 둔다 → 캘린더에 적힌 걸 지우지 않음
+        events.push({ title: title, start: start, end: end, cat: schoolColorCat_(bg[er][c]) });
       }
     }
   });
@@ -878,14 +879,30 @@ function schoolApply_(events, months) {
   const toCell = (kind, v) => {
     if (!v) return "";
     if (kind === "start" || kind === "end") {
-      const [y, m, d] = v.split("-").map(Number);
-      return new Date(y, m - 1, d);
+      // 시트의 시간대 기준 자정으로 만든다. (스크립트 시간대로 만들면 시트에서 하루 앞당겨 보일 수 있다)
+      return Utilities.parseDate(v, tz, "yyyy-MM-dd");
     }
     return /^[=+\-@]/.test(v) ? "'" + v : v; // 수식으로 바뀌지 않게
   };
   const FIELDS = ["title", "start", "end", "time", "place", "memo"];
   const byKey = {};
   events.forEach((e) => (byKey[e.key] = e));
+
+  // 직접 적은 일정(키 없음)을 날짜+제목으로 찾아 둔다. 원본과 같은 일정이면 새로 넣지 않고 그 줄을 이어받는다.
+  const sameKey = (start, title) => start + "|" + String(title).replace(/\s+/g, " ").trim();
+  const manual = {};
+  rows.forEach((row, i) => {
+    if (String(row[keyCol]).trim()) return;
+    const k = sameKey(cell(row[c.start], "start"), cell(row[c.title], "title"));
+    (manual[k] = manual[k] || []).push(i);
+  });
+  const adopt = (e) => {
+    const list = manual[sameKey(e.start, e.title)];
+    if (!list || !list.length) return false;
+    sh.getRange(list.shift() + 2, keyCol + 1).setValue(e.key);
+    return true;
+  };
+  let merged = 0;
 
   const lines = [];
   const now = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm");
@@ -898,6 +915,12 @@ function schoolApply_(events, months) {
     if (!key) return; // 직접 적은 일정
     have[key] = true;
     const e = byKey[key];
+    // 같은 일정을 직접 적어 둔 줄이 있으면 그 줄을 남기고, 가져온 줄은 지운다.
+    if (e && adopt(e)) {
+      toDelete.push(i + 2);
+      merged++;
+      return;
+    }
     if (!e) {
       const start = cell(row[c.start], "start");
       // 이미 지난 일정은 원본에서 지워져도 기록으로 남긴다. 이번에 못 읽은 달의 일정도 그대로 둔다.
@@ -909,10 +932,11 @@ function schoolApply_(events, months) {
     }
     const changes = [];
     FIELDS.forEach((f) => {
-      if (c[f] === undefined) return;
+      // 원본에 없는 칸(달력 모양의 시간·장소·메모)은 캘린더에 적힌 걸 그대로 둔다.
+      if (c[f] === undefined || e[f] === undefined) return;
       const before = cell(row[c[f]], f);
       if (before !== (e[f] || "")) {
-        changes.push((f === "end" ? "종료일" : f === "time" ? "시간" : f === "place" ? "장소" : f === "memo" ? "메모" : f) + ": " + (before || "(없음)") + " → " + (e[f] || "(없음)"));
+        changes.push({ title: "제목", start: "시작일", end: "종료일", time: "시간", place: "장소", memo: "메모" }[f] + ": " + (before || "(없음)") + " → " + (e[f] || "(없음)"));
         sh.getRange(i + 2, c[f] + 1).setValue(toCell(f, e[f] || ""));
       }
     });
@@ -921,9 +945,17 @@ function schoolApply_(events, months) {
       log("바뀜", e, changes.join(", "));
     }
   });
+  // 새 일정 중 직접 적어 둔 것과 같은 건 그 줄을 이어받는다. (줄을 지우기 전에 해야 줄 번호가 맞다)
+  const fresh = events.filter((e) => {
+    if (have[e.key]) return false;
+    if (adopt(e)) {
+      merged++;
+      return false;
+    }
+    return true;
+  });
   toDelete.reverse().forEach((r) => sh.deleteRow(r));
 
-  const fresh = events.filter((e) => !have[e.key]);
   if (fresh.length) {
     const out = fresh.map((e) => {
       const row = new Array(width).fill("");
@@ -940,8 +972,9 @@ function schoolApply_(events, months) {
     lines.length = 0;
     lines.push([now, "처음 가져옴", "", fresh.length + "개 일정을 캘린더에 넣었어요", "이후 바뀌는 것부터 한 줄씩 적혀요"]);
   }
+  if (merged) lines.push([now, "합침", "", merged + "개 일정", "직접 적어 둔 같은 일정(날짜·제목이 같음)과 하나로 합쳤어요"]);
   if (lines.length) schoolLog_(lines);
-  return { added: fresh.length, updated: updated, removed: toDelete.length, lines: lines };
+  return { added: fresh.length, updated: updated, removed: toDelete.length - merged, merged: merged, lines: lines };
 }
 
 // '학사 일정 기록' 탭 맨 위(2번째 줄)에 최근 것부터 쌓는다. 2,000줄이 넘으면 오래된 것부터 지운다.
@@ -984,7 +1017,7 @@ function schoolSync_() {
 }
 
 const schoolSummary_ = (r) =>
-  "추가 " + r.added + " · 바뀜 " + r.updated + " · 빠짐 " + r.removed + " (원본 일정 " + r.total + "개" + (r.skipped ? ", 날짜를 못 읽어 건너뛴 줄 " + r.skipped + "개" : "") + ")";
+  "추가 " + r.added + " · 바뀜 " + r.updated + " · 빠짐 " + r.removed + (r.merged ? " · 직접 적은 일정과 합침 " + r.merged : "") + " (원본 일정 " + r.total + "개" + (r.skipped ? ", 날짜를 못 읽어 건너뛴 줄 " + r.skipped + "개" : "") + ")";
 
 function schoolInstallTrigger_() {
   ScriptApp.getProjectTriggers()
