@@ -1035,7 +1035,10 @@ function schoolApply_(events, months, force) {
       log("추가", e, [e.end && "~" + e.end, e.time, e.place].filter(Boolean).join(" "));
       return row;
     });
-    sh.getRange(sh.getLastRow() + 1, 1, out.length, width).setValues(out);
+    const at = sh.getLastRow() + 1;
+    // 탭의 줄이 모자라면 늘리고, 늘어난 줄에도 구분 색이 칠해지게 색 규칙을 다시 건다.
+    if (ensureRows_(sh, at + out.length - 1)) setupCalendarColors_();
+    sh.getRange(at, 1, out.length, width).setValues(out);
   }
   // 처음 가져올 때는 일정마다 '추가'를 적으면 기록이 너무 길어지므로 한 줄로 요약한다.
   if (!Object.keys(have).length && fresh.length) {
@@ -1087,6 +1090,7 @@ function schoolList_(have) {
 
 function schoolListWrite_(sh, rows) {
   sh.clearContents();
+  ensureRows_(sh, rows.length + 1);
   sh.getRange(1, 1, 1, 5).setValues([["학사 일정 키", "상태", "날짜", "제목", "바뀐 시각"]]).setFontWeight("bold");
   if (rows.length) sh.getRange(2, 1, rows.length, 5).setValues(rows.map((r) => r.map((v) => (/^[=+\-@]/.test(String(v)) ? "'" + v : v))));
 }
@@ -1277,4 +1281,13 @@ function menuSchoolRestore() {
   } catch (err) {
     ui.alert(err.message);
   }
+}
+
+// 탭의 줄 수가 need 보다 적으면 끝에 줄을 더한다. (스크립트로 쓸 때는 시트가 줄을 자동으로 늘려 주지 않는다)
+// 한 번에 넉넉히(최소 500줄) 늘려서 자주 늘리지 않게 한다. 늘렸으면 true.
+function ensureRows_(sh, need) {
+  const max = sh.getMaxRows();
+  if (need <= max) return false;
+  sh.insertRowsAfter(max, Math.max(need - max, 500));
+  return true;
 }
