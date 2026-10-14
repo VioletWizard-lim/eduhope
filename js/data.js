@@ -211,7 +211,9 @@ export function cellText(cell) {
   if (!cell || cell.v == null) return cell?.f ? String(cell.f) : "";
   const v = cell.v;
   if (typeof v === "string") {
-    const m = /^Date\((\d+),(\d+),(\d+)/.exec(v);
+    const m = /^Date\((\d+),(\d+),(\d+)(?:,(\d+),(\d+))?/.exec(v);
+    // 시간만 적힌 칸이 날짜와 섞인 열에 있으면 "Date(1899,11,30,9,0,0)" (시트 달력의 0일 + 시간)으로 온다 → 09:00
+    if (m && m[1] === "1899" && m[2] === "11" && m[3] === "30") return `${pad(+(m[4] || 0))}:${pad(+(m[5] || 0))}`;
     if (m) return `${m[1]}-${pad(+m[2] + 1)}-${pad(m[3])}`;
     return v.trim();
   }
