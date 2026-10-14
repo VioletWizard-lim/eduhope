@@ -279,6 +279,7 @@ function onOpen() {
     .addSeparator()
     .addItem("학사 일정 연결하기", "menuSchoolConnect")
     .addItem("학사 일정 지금 가져오기", "menuSchoolSyncNow")
+    .addItem("학사 일정 다시 맞추기", "menuSchoolRealign")
     .addItem("학사 일정 자동 가져오기 끄기", "menuSchoolStop")
     .addToUi();
 }
@@ -852,7 +853,8 @@ function schoolRead_(source) {
 }
 
 // 캘린더 탭에 반영한다. 반환: { added, updated, removed, lines[] }
-function schoolApply_(events, months) {
+// force: "" = 평소, "auto" = 가져온 줄을 모두 원본대로 다시 적음 ('직접 고침' 줄은 그대로), "all" = '직접 고침' 줄까지
+function schoolApply_(events, months, force) {
   const ss = SpreadsheetApp.getActive();
   const sh = ss.getSheetByName(CAL_SHEET);
   if (!sh) throw new Error("이 시트에 '" + CAL_SHEET + "' 탭이 없어요.");
@@ -948,7 +950,7 @@ function schoolApply_(events, months) {
     if (!key) return; // 직접 적은 일정
     have[key] = true;
     // 직접 고친 줄은 원본이 바뀌거나 없어져도 그대로 둔다.
-    if (state[i] === SCHOOL_LOCKED) return;
+    if (state[i] === SCHOOL_LOCKED && force !== "all") return;
     const e = byKey[key];
     // 같은 일정을 직접 적어 둔 줄이 있으면 그 줄을 남기고, 가져온 줄은 지운다.
     if (e && adopt(e)) {
@@ -957,6 +959,13 @@ function schoolApply_(events, months) {
       return;
     }
     if (!e) {
+      // 다시 맞추기: 원본에서 없어진 줄도 키(원본 날짜|제목)로 날짜·제목을 되살린다.
+      const km = key.match(/^(\d{4}-\d\d-\d\d)\|(.*?)(#\d+)?$/);
+      if (force && km) {
+        if (cell(row[c.start], "start") !== km[1]) sh.getRange(i + 2, c.start + 1).setValue(toCell("start", km[1]));
+        if (cell(row[c.title], "title") !== km[2]) sh.getRange(i + 2, c.title + 1).setValue(toCell("title", km[2]));
+        row[c.start] = km[1];
+      }
       const start = cell(row[c.start], "start");
       // 이미 지난 일정은 원본에서 지워져도 기록으로 남긴다. 이번에 못 읽은 달의 일정도 그대로 둔다.
       if (start && start < today) return;
@@ -966,7 +975,7 @@ function schoolApply_(events, months) {
       return;
     }
     const cur = sigRow(row, e);
-    const edited = state[i] ? state[i] !== stamp(cur) : cur !== sigEvent(e);
+    const edited = !force && (state[i] ? state[i] !== stamp(cur) : cur !== sigEvent(e));
     if (edited) {
       state[i] = SCHOOL_LOCKED;
       log("직접 고침", e, "캘린더에서 직접 고친 줄이라 앞으로 자동으로 바꾸지 않아요 ('학사 일정 상태' 칸을 지우면 다시 자동)");
@@ -1043,7 +1052,7 @@ function schoolLog_(lines) {
   if (extra > 0) sh.deleteRows(2002, extra);
 }
 
-function schoolSync_() {
+function schoolSync_(force) {
   const url = props().getProperty("SCHOOL_URL");
   if (!url) throw new Error("아직 학사 일정 시트를 연결하지 않았어요. [" + MENU + " → 학사 일정 연결하기] 를 먼저 해 주세요.");
   const lock = LockService.getScriptLock();
@@ -1052,7 +1061,7 @@ function schoolSync_() {
     const read = schoolRead_(schoolSource_(url));
     // 원본을 하나도 못 읽었으면 (탭 구조가 바뀌었거나 비었으면) 캘린더를 건드리지 않는다.
     if (!read.events.length) throw new Error("원본 '" + read.tab + "' 탭에서 일정을 하나도 읽지 못해 캘린더는 그대로 두었어요. 탭 모양(요일 머리글·날짜 칸)이 바뀌었는지 확인해 주세요.");
-    const r = schoolApply_(read.events, read.months);
+    const r = schoolApply_(read.events, read.months, force || "");
     r.total = read.events.length;
     r.skipped = read.skipped;
     return r;
@@ -1160,4 +1169,24 @@ function menuSchoolStop() {
   const ts = ScriptApp.getProjectTriggers().filter((t) => t.getHandlerFunction() === SCHOOL_TRIGGER);
   ts.forEach((t) => ScriptApp.deleteTrigger(t));
   ui.alert(ts.length ? "자동 가져오기를 껐어요. 캘린더에 이미 들어간 일정은 그대로 있어요.\n다시 켜려면 [학사 일정 연결하기] 를 해 주세요." : "자동 가져오기가 켜져 있지 않아요.");
+}
+
+// 캘린더 탭의 칸이 밀리거나(셀 삽입·삭제, 일부 칸만 정렬) 내용이 엉켰을 때:
+// 가져온 줄을 '학사 일정 키'(원본 날짜·제목)를 기준으로 원본과 똑같이 다시 적는다. 직접 적은 줄(키 없음)은 건드리지 않는다.
+function menuSchoolRealign() {
+  const ui = SpreadsheetApp.getUi();
+  const a = ui.alert(
+    "학사 일정 다시 맞추기",
+    "원본에서 가져온 줄(오른쪽에 '학사 일정 키'가 있는 줄)의 제목·구분·날짜를 원본과 똑같이 다시 적어요.\n" +
+      "직접 적은 줄(키가 빈 줄)은 건드리지 않아요.\n\n" +
+      "'직접 고침' 표시된 줄도 원본대로 되돌릴까요?\n" +
+      "  예: 전부 원본대로\n  아니오: '직접 고침' 줄은 그대로 두고 나머지만\n  취소: 아무것도 안 함",
+    ui.ButtonSet.YES_NO_CANCEL,
+  );
+  if (a !== ui.Button.YES && a !== ui.Button.NO) return;
+  try {
+    ui.alert("다시 맞췄어요", schoolSummary_(schoolSync_(a === ui.Button.YES ? "all" : "auto")), ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert(err.message);
+  }
 }
