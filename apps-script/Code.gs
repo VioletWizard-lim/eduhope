@@ -16,6 +16,10 @@
  *   3) 팝업 안내대로 [배포 → 새 배포 → 웹 앱] (실행 계정: 나 / 액세스: 모든 사용자)
  *   4) 배포 화면의 '웹 앱 URL' 을 복사 → 시트 메뉴 [📷 기윤실 앱 → ② 앱과 연결] 에 붙여넣기
  *      → 끝 (주소가 시트 '설정' 탭에 적히고, 앱이 거기서 읽어 갑니다)
+ *
+ * 학사 일정 가져오기 (이 파일 맨 아래)
+ *   다른 시트의 학사 일정 탭을 1시간마다 확인해, 바뀐 내용을 '캘린더' 탭에 넣고/고치고/빼고
+ *   바뀐 게 있으면 메일로 알려 줍니다. 시트 메뉴 [📷 기윤실 앱 → 학사 일정 연결하기] 로 시작.
  */
 
 const PHOTO_SHEET = "사진";
@@ -272,6 +276,10 @@ function onOpen() {
     .addSeparator()
     .addItem("관리자 추가·비밀번호 변경", "menuAdmin")
     .addItem("관리자 삭제", "menuRemoveAdmin")
+    .addSeparator()
+    .addItem("학사 일정 연결하기", "menuSchoolConnect")
+    .addItem("학사 일정 지금 가져오기", "menuSchoolSyncNow")
+    .addItem("학사 일정 자동 가져오기 끄기", "menuSchoolStop")
     .addToUi();
 }
 
@@ -493,4 +501,423 @@ function removeAdmin_(id) {
   Object.keys(props().getProperties())
     .filter((k) => k.toLowerCase() === "user_" + id)
     .forEach((k) => props().deleteProperty(k));
+}
+
+// ===============================================================
+// 학사 일정 가져오기
+//   다른 시트(학사 일정 탭)를 1시간마다 읽어 '캘린더' 탭에 반영한다.
+//   - 새 일정 → 캘린더 맨 아래에 추가
+//   - 시간·장소·메모·종료일이 바뀐 일정 → 그 줄을 고침 (구분 칸은 처음 넣을 때만 채우고 이후엔 손대지 않음)
+//   - 원본에서 없어진 일정 → 캘린더에서 뺌 (이미 지난 일정은 기록으로 남겨 둠)
+//   - 직접 적은 일정(맨 끝 '학사 일정 키' 칸이 빈 줄)은 절대 건드리지 않는다.
+//   바뀐 내용은 '학사 일정 기록' 탭에 쌓이고, 자동 확인 때 바뀐 게 있으면 메일로 알려 준다.
+// ===============================================================
+const SCHOOL_KEY_HEADER = "학사 일정 키";
+const SCHOOL_LOG_SHEET = "학사 일정 기록";
+const SCHOOL_CATEGORY = "그 외"; // 원본에 '구분' 칸이 없을 때 넣을 구분
+const SCHOOL_TRIGGER = "schoolSyncTrigger";
+
+// 원본 머리글 이름 → 뜻 (띄어쓰기·괄호는 무시하고 비교, 앞쪽 이름이 우선)
+const SCHOOL_HEADERS = {
+  title: ["제목", "행사명", "행사", "일정명", "일정", "행사내용", "학사일정", "내용"],
+  start: ["시작일", "시작", "날짜", "일자", "일시", "기간"],
+  end: ["종료일", "종료", "끝"],
+  month: ["월"],
+  day: ["일"],
+  time: ["시간"],
+  place: ["장소"],
+  memo: ["메모", "비고"],
+  cat: ["구분", "분류"],
+};
+
+const normHead_ = (h) => String(h).replace(/\(.*?\)/g, "").replace(/\s+/g, "");
+const schoolTz_ = () => SpreadsheetApp.getActive().getSpreadsheetTimeZone();
+
+function schoolIds_(url) {
+  const m = String(url || "").match(/\/spreadsheets\/d\/([\w-]{20,})/);
+  if (!m) return null;
+  const g = String(url).match(/[#?&]gid=(\d+)/);
+  return { id: m[1], gid: g ? Number(g[1]) : null };
+}
+
+// 원본 시트에서 학사 일정 탭을 연다. (주소의 gid 로 탭을 찾고, 없으면 첫 탭)
+function schoolSource_(url) {
+  const ids = schoolIds_(url);
+  if (!ids) throw new Error("구글 시트 주소가 아니에요.");
+  let book;
+  try {
+    book = SpreadsheetApp.openById(ids.id);
+  } catch (err) {
+    throw new Error("원본 시트를 열 수 없어요. 이 구글 계정에 그 시트를 볼 권한이 있는지 확인해 주세요.");
+  }
+  const sh = book.getSheets().find((s) => ids.gid === null || s.getSheetId() === ids.gid);
+  if (!sh) throw new Error("주소에 있는 탭(gid=" + ids.gid + ")을 찾지 못했어요. 탭이 지워졌는지 확인해 주세요.");
+  return { book: book, sheet: sh };
+}
+
+// 연도가 없는 날짜(3.2 / 3월 2일)에 붙일 연도. 시트·탭 이름의 '2026학년도' 같은 걸 먼저 보고, 없으면 올해 기준.
+function schoolBaseYear_(names, now) {
+  const m = names.join(" ").match(/(20\d\d)/);
+  if (m) return { year: Number(m[1]), schoolYear: true };
+  // 학년도는 3월에 시작하므로 1~2월이면 작년 학년도로 본다.
+  return { year: now.getMonth() < 2 ? now.getFullYear() - 1 : now.getFullYear(), schoolYear: true };
+}
+
+function ymd_(y, m, d) {
+  if (!(m >= 1 && m <= 12 && d >= 1 && d <= 31)) return "";
+  return y + "-" + String(m).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+}
+
+// 날짜 하나: Date 객체 / 2026.3.2 / 2026-03-02 / 3.2 / 3/2 / 3월 2일(월)
+function schoolDate_(v, base, tz) {
+  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, "yyyy-MM-dd");
+  const t = String(v || "").trim();
+  if (!t) return "";
+  let m = t.match(/(20\d\d)\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/);
+  if (m) return ymd_(Number(m[1]), Number(m[2]), Number(m[3]));
+  m = t.match(/^(\d{1,2})\s*[.\/월]\s*(\d{1,2})/);
+  if (m) {
+    const mo = Number(m[1]);
+    // 학년도 기준이면 1~2월은 다음 해
+    return ymd_(base.year + (base.schoolYear && mo < 3 ? 1 : 0), mo, Number(m[2]));
+  }
+  return "";
+}
+
+// "3.2~3.4", "3.2~4", "2026.3.30 - 4.2" 같은 기간 → [시작, 끝]
+// 끝에 연도가 없으면 시작 연도를 따르고(12월→1월이면 다음 해), 일만 있으면 시작 달을 따른다.
+function schoolRange_(v, base, tz) {
+  if (v instanceof Date) return [schoolDate_(v, base, tz), ""];
+  const parts = String(v || "").split(/\s*[~∼〜]\s*|\s+[-–]\s+/);
+  const start = schoolDate_(parts[0], base, tz);
+  if (!start || parts.length < 2) return [start, ""];
+  const t = String(parts[1]).trim();
+  const sy = Number(start.slice(0, 4));
+  const sm = Number(start.slice(5, 7));
+  let end = "";
+  let m;
+  if (/^20\d\d/.test(t)) end = schoolDate_(t, base, tz);
+  else if ((m = t.match(/^(\d{1,2})\s*[.\/월]\s*(\d{1,2})/))) end = ymd_(Number(m[1]) < sm ? sy + 1 : sy, Number(m[1]), Number(m[2]));
+  else if ((m = t.match(/^(\d{1,2})\s*일?(\s|\(|$)/))) end = ymd_(sy, sm, Number(m[1]));
+  return [start, end > start ? end : ""];
+}
+
+function schoolTime_(v, tz) {
+  if (v instanceof Date && !isNaN(v)) return Utilities.formatDate(v, tz, "HH:mm");
+  return String(v === null || v === undefined ? "" : v).trim();
+}
+
+// 원본 탭을 읽어 일정 목록으로 바꾼다. 머리글은 위쪽 15줄 안에서 찾는다.
+function schoolRead_(source) {
+  const sh = source.sheet;
+  const tz = source.book.getSpreadsheetTimeZone();
+  const values = sh.getDataRange().getValues();
+  const base = schoolBaseYear_([source.book.getName(), sh.getName()], new Date());
+  let headRow = -1;
+  let col = {};
+  for (let r = 0; r < Math.min(values.length, 15) && headRow < 0; r++) {
+    const heads = values[r].map(normHead_);
+    const c = {};
+    Object.keys(SCHOOL_HEADERS).forEach((k) => {
+      for (const name of SCHOOL_HEADERS[k]) {
+        const i = heads.indexOf(name);
+        if (i >= 0 && Object.keys(c).every((o) => c[o] !== i)) {
+          c[k] = i;
+          break;
+        }
+      }
+    });
+    if (c.title !== undefined && (c.start !== undefined || (c.month !== undefined && c.day !== undefined))) {
+      headRow = r;
+      col = c;
+    }
+  }
+  const sample = values.slice(0, 3).map((row) => row.filter((v) => v !== "").slice(0, 8).join(" | ")).filter(String);
+  if (headRow < 0) return { events: [], skipped: 0, headers: null, sample: sample, tab: sh.getName() };
+
+  const events = [];
+  let skipped = 0;
+  let lastMonth = null;
+  let lastStart = "";
+  let lastEnd = "";
+  for (let r = headRow + 1; r < values.length; r++) {
+    const row = values[r];
+    const get = (k) => (col[k] === undefined ? "" : row[col[k]]);
+    const title = String(get("title")).replace(/\s+/g, " ").trim();
+    let start = "";
+    let end = "";
+    if (col.start !== undefined && get("start") !== "") {
+      [start, end] = schoolRange_(get("start"), base, tz);
+    } else if (col.month !== undefined) {
+      // 월 칸은 합쳐진 셀이라 첫 줄에만 값이 있는 경우가 많다 → 위에서 이어받는다.
+      const mo = parseInt(get("month"), 10);
+      if (mo) lastMonth = mo;
+      const d = parseInt(get("day"), 10);
+      if (lastMonth && d) start = ymd_(base.year + (base.schoolYear && lastMonth < 3 ? 1 : 0), lastMonth, d);
+    }
+    if (col.end !== undefined && get("end") !== "") end = schoolDate_(get("end"), base, tz) || end;
+    if (!title) continue;
+    // 같은 날 행사가 여러 줄이면 날짜 칸이 비어 있는 경우가 많다 → 바로 위 날짜를 이어받는다.
+    if (!start && get("start") === "" && get("day") === "" && lastStart) {
+      start = lastStart;
+      end = lastEnd;
+    }
+    if (!start) {
+      skipped++;
+      continue;
+    }
+    lastStart = start;
+    lastEnd = end;
+    events.push({
+      title: title,
+      start: start,
+      end: end && end > start ? end : "",
+      time: schoolTime_(get("time"), tz),
+      place: String(get("place")).trim(),
+      memo: String(get("memo")).trim(),
+      cat: String(get("cat")).trim(),
+    });
+  }
+  // 같은 날 같은 제목이 또 있으면 #2, #3 을 붙여 구별한다.
+  const seen = {};
+  events.forEach((e) => {
+    const k = e.start + "|" + e.title;
+    seen[k] = (seen[k] || 0) + 1;
+    e.key = seen[k] > 1 ? k + "#" + seen[k] : k;
+  });
+  const headers = Object.keys(col).map((k) => k + "=" + values[headRow][col[k]]);
+  return { events: events, skipped: skipped, headers: headers, sample: sample, tab: sh.getName() };
+}
+
+// 캘린더 탭에 반영한다. 반환: { added, updated, removed, lines[] }
+function schoolApply_(events) {
+  const ss = SpreadsheetApp.getActive();
+  const sh = ss.getSheetByName(CAL_SHEET);
+  if (!sh) throw new Error("이 시트에 '" + CAL_SHEET + "' 탭이 없어요.");
+  const tz = schoolTz_();
+  const today = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd");
+  let width = Math.max(sh.getLastColumn(), 1);
+  let head = sh.getRange(1, 1, 1, width).getValues()[0].map(normHead_);
+  let keyCol = head.indexOf(normHead_(SCHOOL_KEY_HEADER));
+  if (keyCol < 0) {
+    keyCol = width; // 맨 끝에 '학사 일정 키' 칸을 만든다. (앱은 이 칸을 읽지 않는다)
+    sh.getRange(1, keyCol + 1).setValue(SCHOOL_KEY_HEADER).setFontColor("#999999");
+    width = keyCol + 1;
+    head = sh.getRange(1, 1, 1, width).getValues()[0].map(normHead_);
+  }
+  const find = (names) => names.map((n) => head.indexOf(n)).find((i) => i >= 0);
+  const c = {
+    title: find(["제목"]),
+    cat: find(["구분"]),
+    start: find(["시작일", "날짜"]),
+    end: find(["종료일"]),
+    time: find(["시간"]),
+    place: find(["장소"]),
+    memo: find(["메모"]),
+  };
+  if (c.title === undefined || c.start === undefined) throw new Error("'" + CAL_SHEET + "' 탭 첫 줄에 '제목'과 '시작일'(또는 '날짜') 칸이 있어야 해요.");
+
+  const last = sh.getLastRow();
+  const rows = last > 1 ? sh.getRange(2, 1, last - 1, width).getValues() : [];
+  const cell = (v, kind) => {
+    if (kind === "start" || kind === "end") return schoolDate_(v, { year: 0, schoolYear: false }, tz);
+    if (kind === "time") return schoolTime_(v, tz);
+    // 수식 막으려고 앞에 붙인 ' 는 값이 아니므로 떼고 비교
+    return String(v === null || v === undefined ? "" : v).trim().replace(/^'(?=[=+\-@])/, "");
+  };
+  const toCell = (kind, v) => {
+    if (!v) return "";
+    if (kind === "start" || kind === "end") {
+      const [y, m, d] = v.split("-").map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return /^[=+\-@]/.test(v) ? "'" + v : v; // 수식으로 바뀌지 않게
+  };
+  const FIELDS = ["title", "start", "end", "time", "place", "memo"];
+  const byKey = {};
+  events.forEach((e) => (byKey[e.key] = e));
+
+  const lines = [];
+  const now = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd HH:mm");
+  const log = (kind, e, detail) => lines.push([now, kind, e.start, e.title, detail || ""]);
+  let updated = 0;
+  const toDelete = [];
+  const have = {};
+  rows.forEach((row, i) => {
+    const key = String(row[keyCol]).trim();
+    if (!key) return; // 직접 적은 일정
+    have[key] = true;
+    const e = byKey[key];
+    if (!e) {
+      const start = cell(row[c.start], "start");
+      // 이미 지난 일정은 원본에서 지워져도 기록으로 남긴다.
+      if (start && start < today) return;
+      toDelete.push(i + 2);
+      log("빠짐", { start: start, title: cell(row[c.title], "title") }, "원본에서 없어져 캘린더에서 뺐어요");
+      return;
+    }
+    const changes = [];
+    FIELDS.forEach((f) => {
+      if (c[f] === undefined) return;
+      const before = cell(row[c[f]], f);
+      if (before !== (e[f] || "")) {
+        changes.push((f === "end" ? "종료일" : f === "time" ? "시간" : f === "place" ? "장소" : f === "memo" ? "메모" : f) + ": " + (before || "(없음)") + " → " + (e[f] || "(없음)"));
+        sh.getRange(i + 2, c[f] + 1).setValue(toCell(f, e[f] || ""));
+      }
+    });
+    if (changes.length) {
+      updated++;
+      log("바뀜", e, changes.join(", "));
+    }
+  });
+  toDelete.reverse().forEach((r) => sh.deleteRow(r));
+
+  const fresh = events.filter((e) => !have[e.key]);
+  if (fresh.length) {
+    const out = fresh.map((e) => {
+      const row = new Array(width).fill("");
+      FIELDS.forEach((f) => c[f] !== undefined && (row[c[f]] = toCell(f, e[f] || "")));
+      if (c.cat !== undefined) row[c.cat] = CATEGORIES.some((x) => x[0] === e.cat) ? e.cat : SCHOOL_CATEGORY;
+      row[keyCol] = e.key;
+      log("추가", e, [e.end && "~" + e.end, e.time, e.place].filter(Boolean).join(" "));
+      return row;
+    });
+    sh.getRange(sh.getLastRow() + 1, 1, out.length, width).setValues(out);
+  }
+  if (lines.length) schoolLog_(lines);
+  return { added: fresh.length, updated: updated, removed: toDelete.length, lines: lines };
+}
+
+// '학사 일정 기록' 탭 맨 위(2번째 줄)에 최근 것부터 쌓는다. 2,000줄이 넘으면 오래된 것부터 지운다.
+function schoolLog_(lines) {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(SCHOOL_LOG_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(SCHOOL_LOG_SHEET);
+    sh.getRange(1, 1, 1, 5).setValues([["확인 시각", "변경", "날짜", "제목", "내용"]]).setFontWeight("bold");
+    sh.setFrozenRows(1);
+  }
+  sh.insertRowsAfter(1, lines.length);
+  sh.getRange(2, 1, lines.length, 5).setValues(lines.map((l) => l.map((v) => (/^[=+\-@]/.test(String(v)) ? "'" + v : v))));
+  const extra = sh.getLastRow() - 2001;
+  if (extra > 0) sh.deleteRows(2002, extra);
+}
+
+function schoolSync_() {
+  const url = props().getProperty("SCHOOL_URL");
+  if (!url) throw new Error("아직 학사 일정 시트를 연결하지 않았어요. [" + MENU + " → 학사 일정 연결하기] 를 먼저 해 주세요.");
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) throw new Error("다른 가져오기가 진행 중이에요. 잠시 뒤 다시 해 주세요.");
+  try {
+    const read = schoolRead_(schoolSource_(url));
+    // 원본을 하나도 못 읽었으면 (탭 구조가 바뀌었거나 비었으면) 캘린더를 건드리지 않는다.
+    if (!read.events.length) throw new Error("원본 '" + read.tab + "' 탭에서 일정을 하나도 읽지 못해 캘린더는 그대로 두었어요. 탭의 머리글(제목·날짜 칸)이 바뀌었는지 확인해 주세요.");
+    const r = schoolApply_(read.events);
+    r.total = read.events.length;
+    r.skipped = read.skipped;
+    return r;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+const schoolSummary_ = (r) =>
+  "추가 " + r.added + " · 바뀜 " + r.updated + " · 빠짐 " + r.removed + " (원본 일정 " + r.total + "개" + (r.skipped ? ", 날짜를 못 읽어 건너뛴 줄 " + r.skipped + "개" : "") + ")";
+
+function schoolInstallTrigger_() {
+  ScriptApp.getProjectTriggers()
+    .filter((t) => t.getHandlerFunction() === SCHOOL_TRIGGER)
+    .forEach((t) => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger(SCHOOL_TRIGGER).timeBased().everyHours(1).create();
+}
+
+// 1시간마다 자동 실행. 바뀐 게 있거나 문제가 생기면 메일로 알린다.
+function schoolSyncTrigger() {
+  const to = Session.getEffectiveUser().getEmail();
+  const sheetUrl = SpreadsheetApp.getActive().getUrl();
+  try {
+    const r = schoolSync_();
+    if (!r.lines.length) return;
+    const body = r.lines
+      .slice(0, 50)
+      .map((l) => "[" + l[1] + "] " + l[2] + " " + l[3] + (l[4] ? " — " + l[4] : ""))
+      .join("\n");
+    MailApp.sendEmail(
+      to,
+      "[기윤실 앱] 학사 일정이 바뀌어 캘린더에 반영했어요 (" + (r.added + r.updated + r.removed) + "건)",
+      schoolSummary_(r) + "\n\n" + body + (r.lines.length > 50 ? "\n… 외 " + (r.lines.length - 50) + "건" : "") +
+        "\n\n전체 기록: 시트의 '" + SCHOOL_LOG_SHEET + "' 탭\n" + sheetUrl,
+    );
+  } catch (err) {
+    // 같은 오류 메일은 하루에 한 번만
+    const cache = CacheService.getScriptCache();
+    const k = "school_err_" + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(err.message))).slice(0, 20);
+    if (cache.get(k)) return;
+    cache.put(k, "1", 6 * 60 * 60);
+    MailApp.sendEmail(to, "[기윤실 앱] 학사 일정을 가져오지 못했어요", err.message + "\n\n" + sheetUrl);
+  }
+}
+
+function menuSchoolConnect() {
+  const ui = SpreadsheetApp.getUi();
+  const now = props().getProperty("SCHOOL_URL");
+  const r = ui.prompt(
+    "학사 일정 연결하기",
+    (now ? "지금 연결된 주소:\n" + now + "\n\n" : "") +
+      "학사 일정이 있는 구글 시트에서 그 탭을 연 상태의 주소를 통째로 복사해 붙여넣어 주세요.\n(주소 끝의 gid=… 로 탭을 찾아요)",
+    ui.ButtonSet.OK_CANCEL,
+  );
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const url = r.getResponseText().trim();
+  let read;
+  try {
+    read = schoolRead_(schoolSource_(url));
+  } catch (err) {
+    ui.alert(err.message + "\n(아무것도 바뀌지 않았어요)");
+    return;
+  }
+  if (!read.events.length) {
+    ui.alert(
+      "일정을 읽지 못했어요",
+      "'" + read.tab + "' 탭에서 제목과 날짜 칸을 찾지 못했어요. (아무것도 바뀌지 않았어요)\n\n" +
+        "탭 위쪽 내용:\n" + (read.sample.join("\n") || "(비어 있음)") +
+        "\n\n첫 줄에 '행사'(또는 '제목'), '날짜'(또는 '월'·'일') 같은 머리글이 있어야 해요. 이 화면을 캡처해 보내주시면 맞춰 드릴게요.",
+      ui.ButtonSet.OK,
+    );
+    return;
+  }
+  const ex = read.events.slice(0, 5).map((e) => "· " + e.start + (e.end ? "~" + e.end.slice(5) : "") + " " + e.title).join("\n");
+  const ok = ui.alert(
+    "학사 일정 " + read.events.length + "개를 찾았어요",
+    "'" + read.tab + "' 탭에서 읽은 칸: " + read.headers.join(", ") + "\n\n" + ex +
+      (read.events.length > 5 ? "\n…" : "") +
+      (read.skipped ? "\n\n날짜를 못 읽어 건너뛴 줄: " + read.skipped + "개" : "") +
+      "\n\n'" + CAL_SHEET + "' 탭에 넣고, 앞으로 1시간마다 확인해서 바뀌면 반영하고 메일로 알려 드릴까요?",
+    ui.ButtonSet.YES_NO,
+  );
+  if (ok !== ui.Button.YES) return;
+  props().setProperty("SCHOOL_URL", url);
+  try {
+    const res = schoolSync_();
+    schoolInstallTrigger_();
+    ui.alert("연결했어요", schoolSummary_(res) + "\n\n이제 1시간마다 자동으로 확인해요. 바뀐 내용은 '" + SCHOOL_LOG_SHEET + "' 탭과 메일로 알려 드려요.", ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert(err.message);
+  }
+}
+
+function menuSchoolSyncNow() {
+  const ui = SpreadsheetApp.getUi();
+  try {
+    ui.alert("학사 일정 가져오기", schoolSummary_(schoolSync_()), ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert(err.message);
+  }
+}
+
+function menuSchoolStop() {
+  const ui = SpreadsheetApp.getUi();
+  const ts = ScriptApp.getProjectTriggers().filter((t) => t.getHandlerFunction() === SCHOOL_TRIGGER);
+  ts.forEach((t) => ScriptApp.deleteTrigger(t));
+  ui.alert(ts.length ? "자동 가져오기를 껐어요. 캘린더에 이미 들어간 일정은 그대로 있어요.\n다시 켜려면 [학사 일정 연결하기] 를 해 주세요." : "자동 가져오기가 켜져 있지 않아요.");
 }
