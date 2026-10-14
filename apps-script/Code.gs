@@ -820,7 +820,7 @@ function schoolRead_(source) {
     read = {
       events: [].concat(...grids.map((g) => g.events)),
       skipped: 0,
-      headers: ["달력 모양 탭 " + grids.length + "개 (" + grids.map((g) => g.tab).join(", ") + ")"],
+      headers: ["달력 모양 탭 " + grids.length + "개 (" + grids.map((g) => g.tab + " " + g.events.length + "개").join(", ") + ")"],
       sample: [],
       tab: grids.map((g) => g.tab).join(", "),
       months: months,
