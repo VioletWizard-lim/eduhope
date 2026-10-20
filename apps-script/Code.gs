@@ -1122,7 +1122,14 @@ function schoolSync_(force) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw new Error("다른 가져오기가 진행 중이에요. 잠시 뒤 다시 해 주세요.");
   try {
-    const read = schoolRead_(schoolSource_(url));
+    // 구글 쪽이 잠깐 느려 'Drive 서비스 타임아웃' 같은 오류가 나면 잠시 뒤 한 번 더 시도한다.
+    let read;
+    try {
+      read = schoolRead_(schoolSource_(url));
+    } catch (err) {
+      Utilities.sleep(10000);
+      read = schoolRead_(schoolSource_(url));
+    }
     // 원본을 하나도 못 읽었으면 (탭 구조가 바뀌었거나 비었으면) 캘린더를 건드리지 않는다.
     if (!read.events.length) throw new Error("원본 '" + read.tab + "' 탭에서 일정을 하나도 읽지 못해 캘린더는 그대로 두었어요. 탭 모양(요일 머리글·날짜 칸)이 바뀌었는지 확인해 주세요.");
     const r = schoolApply_(read.events, read.months, force || "");
@@ -1150,6 +1157,7 @@ function schoolSyncTrigger() {
   const sheetUrl = SpreadsheetApp.getActive().getUrl();
   try {
     const r = schoolSync_();
+    props().deleteProperty("SCHOOL_FAILS");
     if (!r.lines.length) return;
     const body = r.lines
       .slice(0, 50)
@@ -1162,12 +1170,15 @@ function schoolSyncTrigger() {
         "\n\n전체 기록: 시트의 '" + SCHOOL_LOG_SHEET + "' 탭\n" + sheetUrl,
     );
   } catch (err) {
-    // 같은 오류 메일은 하루에 한 번만
-    const cache = CacheService.getScriptCache();
-    const k = "school_err_" + Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, String(err.message))).slice(0, 20);
-    if (cache.get(k)) return;
-    cache.put(k, "1", 6 * 60 * 60);
-    MailApp.sendEmail(to, "[기윤실 앱] 학사 일정을 가져오지 못했어요", err.message + "\n\n" + sheetUrl);
+    // 잠깐의 구글 오류(타임아웃 등)는 다음 시간에 저절로 풀리므로, 3번(약 3시간) 연속 실패했을 때만 한 번 알린다.
+    const fails = Number(props().getProperty("SCHOOL_FAILS") || 0) + 1;
+    props().setProperty("SCHOOL_FAILS", String(fails));
+    if (fails !== 3) return;
+    MailApp.sendEmail(
+      to,
+      "[기윤실 앱] 학사 일정을 3시간째 가져오지 못하고 있어요",
+      err.message + "\n\n캘린더는 그대로 두었어요. 계속 실패하면 시트 메뉴 [" + MENU + " → 학사 일정 지금 가져오기]로 확인해 주세요.\n" + sheetUrl,
+    );
   }
 }
 
