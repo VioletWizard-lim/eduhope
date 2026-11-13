@@ -200,8 +200,9 @@ const views = {
 
   retreats() {
     // 캘린더에서 제목에 '수련회'가 들어간 일정을 모아 보여 준다. (학사 일정에서 가져온 것 포함)
+    // 섬김이 수련회는 섬김이들끼리의 모임이라 뺀다.
     const today = ymd(new Date());
-    const all = state.db.events.filter((e) => /수련회/.test(e.title || ""));
+    const all = state.db.events.filter((e) => /수련회/.test(e.title || "") && !/섬김이/.test(e.title || ""));
     const upcoming = all.filter((e) => (e.endDate || e.date) >= today).sort(byDateAsc);
     const past = all.filter((e) => (e.endDate || e.date) < today).sort(byDateDesc);
     return `
@@ -476,12 +477,12 @@ function retreatItem(r, i) {
       ${r.speakerIntro ? `<h4>주강사 소개 · ${esc(r.speaker)}</h4><p class="retreat-text">${esc(r.speakerIntro)}</p>` : ""}
       ${r.programs ? `<h4>프로그램 소개</h4>${r.programs.map(([t, d]) => `<p class="retreat-text"><b>${esc(t)}</b><br>${esc(d)}</p>`).join("")}` : ""}
       ${r.schedule ? `<h4>시간표</h4>${r.schedule.map((d) => `<div class="retreat-day"><b>${esc(d.day)}</b><table>${d.items.map(([t, what]) => `<tr><th>${esc(t)}</th><td>${esc(what)}</td></tr>`).join("")}</table></div>`).join("")}${r.scheduleNote ? `<p class="meta">* ${esc(r.scheduleNote)}</p>` : ""}` : ""}
-      ${retreatApply(r)}
-      ${orig}`
-    : `<p class="meta" style="margin:10px 0 0">자세한 내용은 홈페이지에서 볼 수 있어요.</p>${orig}`;
+      ${retreatApply(r)}`
+    : `<p class="meta" style="margin:10px 0 0">자세한 내용은 홈페이지에서 볼 수 있어요.</p>`;
   const first = RETREATS.findIndex((x) => x.theme);
   return `<details class="card prayer retreat" ${i === first ? "open" : ""}>
     <summary><h4>${esc(r.title)}</h4></summary>
+    ${orig}
     ${body}
   </details>`;
 }
