@@ -477,12 +477,12 @@ function retreatItem(r, i) {
       ${r.speakerIntro ? `<h4>주강사 소개 · ${esc(r.speaker)}</h4><p class="retreat-text">${esc(r.speakerIntro)}</p>` : ""}
       ${r.programs ? `<h4>프로그램 소개</h4>${r.programs.map(([t, d]) => `<p class="retreat-text"><b>${esc(t)}</b><br>${esc(d)}</p>`).join("")}` : ""}
       ${r.schedule ? `<h4>시간표</h4>${r.schedule.map((d) => `<div class="retreat-day"><b>${esc(d.day)}</b><table>${d.items.map(([t, what]) => `<tr><th>${esc(t)}</th><td>${esc(what)}</td></tr>`).join("")}</table></div>`).join("")}${r.scheduleNote ? `<p class="meta">* ${esc(r.scheduleNote)}</p>` : ""}` : ""}
-      ${retreatApply(r)}
-      ${orig}`
-    : `<p class="meta" style="margin:10px 0 0">자세한 내용은 홈페이지에서 볼 수 있어요.</p>${orig}`;
+      ${retreatApply(r)}`
+    : `<p class="meta" style="margin:10px 0 0">자세한 내용은 홈페이지에서 볼 수 있어요.</p>`;
   const first = RETREATS.findIndex((x) => x.theme);
   return `<details class="card prayer retreat" ${i === first ? "open" : ""}>
     <summary><h4>${esc(r.title)}</h4></summary>
+    ${orig}
     ${body}
   </details>`;
 }
