@@ -340,6 +340,45 @@ button.chip { cursor: pointer; }
 .prayer .prewrap { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); line-height: 1.8; }
 .prayer .orig-link { margin-top: 10px; }
 
+/* ---------- 수련회 ---------- */
+.retreat h4 { margin: 14px 0 6px; }
+.retreat summary h4 { margin: 0; }
+.retreat-hero {
+  margin-top: 10px; padding: 16px 14px; text-align: center; line-height: 1.7;
+  background: #f6e3d3; color: #3b2a22; border-radius: 10px;
+}
+.retreat-badge { display: inline-block; padding: 2px 12px; border-radius: 999px; background: #7a3b2e; color: #fff; font-size: 13px; }
+.retreat-theme { margin: 6px 0 4px; font-size: 30px; font-weight: 800; color: #4a1c14; letter-spacing: 2px; }
+.retreat-speaker { margin-top: 8px; }
+.retreat-hero.summer { background: #d9ebfb; color: #12324f; }
+.retreat-hero.summer .retreat-badge { background: #2f6fb3; }
+.retreat-hero.summer .retreat-theme { color: #1d5a96; font-size: 24px; letter-spacing: 0; }
+.retreat-hero.summer .meta { color: #3d5a75; }
+.retreat-hero.snow { background: linear-gradient(#e6f2f7, #f6ebe6); color: #1f4553; }
+.retreat-hero.snow .retreat-badge { background: #2f6f80; }
+.retreat-hero.snow .retreat-theme { color: #1d5260; font-size: 26px; letter-spacing: 0; }
+.retreat-hero.snow .meta { color: #456470; }
+.retreat-hero.navy { background: #1b2f4b; color: #efe8d8; }
+.retreat-hero.navy .retreat-badge { background: #c9a45c; color: #1b2f4b; }
+.retreat-hero.navy .retreat-theme { color: #fff; font-size: 24px; letter-spacing: 0; }
+.retreat-hero.navy .meta { color: #c9bfa8; }
+.retreat-tagline { margin-bottom: 6px; color: #c9a45c; font-size: 14px; letter-spacing: 1px; }
+.retreat-apply { margin: 12px 0 4px; background: linear-gradient(90deg, #e3609e, #5b9ce6); border-color: transparent; color: #fff; border-radius: 999px; }
+.retreat-poem { margin: 12px 0 4px; font-size: 14px; line-height: 1.8; }
+.retreat-text { margin: 6px 0 10px; font-size: 15px; line-height: 1.75; }
+.retreat-hero .meta { color: #6b5246; }
+.retreat-info { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; margin: 0; }
+.retreat-info dt { font-weight: 700; color: #8a4b3a; white-space: pre-line; }
+.retreat-info dd { margin: 0; overflow-wrap: anywhere; }
+.retreat-notes { margin: 8px 0 0; padding-left: 18px; font-size: 14px; color: var(--muted); }
+.retreat-day { margin-bottom: 10px; }
+.retreat-day table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 14px; }
+.retreat-day th, .retreat-day td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.retreat-day th { width: 6.5em; white-space: nowrap; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (prefers-color-scheme: dark) {
+  .retreat-info dt { color: #e0a58f; }
+}
+
 /* ---------- 후원자 명단 ---------- */
 .donor-slogan { margin: 0; color: var(--sage-strong); font-weight: 700; }
 .donor-title { margin-top: 4px; }
