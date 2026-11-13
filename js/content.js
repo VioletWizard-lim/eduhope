@@ -43,6 +43,16 @@ export const LINKS = [
   { label: "기윤실교사모임 가보고 싶어요", url: VISIT_FORM_URL },
 ];
 
+// 수련회 화면 — 홈페이지(eduhope.or.kr)의 수련회 페이지. 내용을 정리해 넣기 전까지는 원본으로 연결한다.
+export const RETREAT = {
+  pages: [
+    { label: "수련회 페이지 ①", url: "http://www.eduhope.or.kr/?page_id=7212" },
+    { label: "수련회 페이지 ②", url: "http://www.eduhope.or.kr/?page_id=6681" },
+    { label: "수련회 페이지 ③", url: "http://www.eduhope.or.kr/?page_id=6614" },
+    { label: "수련회 페이지 ④", url: "http://www.eduhope.or.kr/?page_id=6612" },
+  ],
+};
+
 // 소개 화면에 넣는 유튜브 영상 ID
 export const YOUTUBE_ID = "sBQ-WjGYvF0";
 

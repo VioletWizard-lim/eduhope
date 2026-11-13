@@ -1,6 +1,6 @@
 import * as data from "./data.js";
 import { SHEET_URL } from "./config.js";
-import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, VISIT_FORM_URL, JOIN, YOUTUBE_ID, CATEGORIES, DIRECTION, HISTORY, CONTACTS } from "./content.js";
+import { ORG, LOCAL_INTRO, SPECIAL_INTRO, LOCAL_GROUPS, SPECIAL_GROUPS, LINKS, VISIT_FORM_URL, JOIN, YOUTUBE_ID, CATEGORIES, DIRECTION, HISTORY, CONTACTS, RETREAT } from "./content.js";
 
 const $view = document.getElementById("view");
 const $account = document.getElementById("account");
@@ -195,6 +195,22 @@ const views = {
     return `
       <div class="section-title">🙏 기도문</div>
       ${list.length ? `<p class="meta">제목을 누르면 기도문이 펼쳐져요.</p>${list.map(prayerItem).join("")}` : `<div class="card empty">등록된 기도문이 없습니다.</div>`}
+    `;
+  },
+
+  retreats() {
+    // 캘린더에서 제목에 '수련회'가 들어간 일정을 모아 보여 준다. (학사 일정에서 가져온 것 포함)
+    const today = ymd(new Date());
+    const all = state.db.events.filter((e) => /수련회/.test(e.title || ""));
+    const upcoming = all.filter((e) => (e.endDate || e.date) >= today).sort(byDateAsc);
+    const past = all.filter((e) => (e.endDate || e.date) < today).sort(byDateDesc);
+    return `
+      <div class="section-title">⛺ 수련회</div>
+      <h3>다가오는 수련회</h3>
+      ${upcoming.length ? upcoming.map(eventCard).join("") : `<div class="card empty">캘린더에 예정된 수련회가 없습니다.</div>`}
+      ${past.length ? `<details class="card"><summary>지난 수련회 ${past.length}개</summary>${past.map(eventCard).join("")}</details>` : ""}
+      <h3>수련회 안내</h3>
+      <div class="links">${RETREAT.pages.map(linkButton).join("")}</div>
     `;
   },
 
