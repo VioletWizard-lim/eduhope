@@ -200,8 +200,9 @@ const views = {
 
   retreats() {
     // 캘린더에서 제목에 '수련회'가 들어간 일정을 모아 보여 준다. (학사 일정에서 가져온 것 포함)
+    // 섬김이 수련회는 섬김이들끼리의 모임이라 뺀다.
     const today = ymd(new Date());
-    const all = state.db.events.filter((e) => /수련회/.test(e.title || ""));
+    const all = state.db.events.filter((e) => /수련회/.test(e.title || "") && !/섬김이/.test(e.title || ""));
     const upcoming = all.filter((e) => (e.endDate || e.date) >= today).sort(byDateAsc);
     const past = all.filter((e) => (e.endDate || e.date) < today).sort(byDateDesc);
     return `
