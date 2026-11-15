@@ -278,6 +278,7 @@ function onOpen() {
     .addItem("관리자 삭제", "menuRemoveAdmin")
     .addSeparator()
     .addItem("학사 일정 연결하기", "menuSchoolConnect")
+    .addItem("학사 일정 시트 연결 빼기", "menuSchoolDisconnect")
     .addItem("학사 일정 지금 가져오기", "menuSchoolSyncNow")
     .addItem("학사 일정 다시 맞추기", "menuSchoolRealign")
     .addItem("지운 학사 일정 되살리기", "menuSchoolRestore")
@@ -845,14 +846,83 @@ function schoolRead_(source) {
     read = schoolReadList_(source);
     read.months = null;
   }
-  // 같은 날 같은 제목이 또 있으면 #2, #3 을 붙여 구별한다.
+  read.name = source.book.getName();
+  return read;
+}
+
+// 연결된 학사 일정 시트 목록 [{url, name}]. 예전 버전이 하나만 저장해 둔 주소(SCHOOL_URL)도 읽어 들인다.
+function schoolSources_() {
+  let list = [];
+  try {
+    list = JSON.parse(props().getProperty("SCHOOL_SOURCES") || "[]");
+  } catch (err) {
+    list = [];
+  }
+  const old = props().getProperty("SCHOOL_URL");
+  const idOf = (u) => (schoolIds_(u) || {}).id;
+  if (old && !list.some((x) => idOf(x.url) === idOf(old))) list.unshift({ url: old, name: "" });
+  return list;
+}
+
+function schoolSaveSources_(list) {
+  props().setProperty("SCHOOL_SOURCES", JSON.stringify(list));
+  props().deleteProperty("SCHOOL_URL");
+}
+
+const schoolSourceName_ = (x, i) => (i + 1) + ". " + (x.name || x.url);
+
+// 시트 하나 읽기. 구글 쪽이 잠깐 느려 'Drive 서비스 타임아웃' 같은 오류가 나면 잠시 뒤 한 번 더 시도한다.
+function schoolReadOne_(url) {
+  try {
+    return schoolRead_(schoolSource_(url));
+  } catch (err) {
+    Utilities.sleep(10000);
+    return schoolRead_(schoolSource_(url));
+  }
+}
+
+// 연결된 시트를 모두 읽어 하나로 합친다.
+//   - 여러 시트에 같은 날·같은 제목 일정이 있으면 앞 시트 것 하나만 쓴다. (해가 겹치는 시트를 둘 다 연결해도 두 번 안 들어가게)
+//   - 한 시트라도 못 읽었으면 이번에는 캘린더에서 아무 일정도 빼지 않는다. (months = {})
+function schoolReadAll_(list) {
+  const reads = [];
+  const failures = [];
+  list.forEach((x, i) => {
+    try {
+      const r = schoolReadOne_(x.url);
+      if (!r.events.length) throw new Error("일정을 하나도 읽지 못했어요 (탭 모양이 바뀌었는지 확인)");
+      if (r.name && r.name !== x.name) x.name = r.name;
+      reads.push(r);
+    } catch (err) {
+      failures.push(schoolSourceName_(x, i) + ": " + err.message);
+    }
+  });
+  if (!reads.length) throw new Error("학사 일정 시트를 하나도 읽지 못해 캘린더는 그대로 두었어요.\n" + failures.join("\n"));
+  const events = [];
+  const taken = {};
+  reads.forEach((r) => {
+    const mine = {};
+    r.events.forEach((e) => {
+      const k = e.start + "|" + e.title;
+      if (taken[k]) return; // 앞 시트에 이미 있는 일정
+      mine[k] = true;
+      events.push(e);
+    });
+    Object.assign(taken, mine);
+  });
+  // 같은 날 같은 제목이 한 시트 안에 또 있으면 #2, #3 을 붙여 구별한다.
   const seen = {};
-  read.events.forEach((e) => {
+  events.forEach((e) => {
     const k = e.start + "|" + e.title;
     seen[k] = (seen[k] || 0) + 1;
     e.key = seen[k] > 1 ? k + "#" + seen[k] : k;
   });
-  return read;
+  let months = {};
+  if (!failures.length) {
+    if (reads.some((r) => !r.months)) months = null;
+    else reads.forEach((r) => Object.assign(months, r.months));
+  }
+  return { events: events, months: months, skipped: reads.reduce((n, r) => n + (r.skipped || 0), 0), failures: failures };
 }
 
 // 캘린더 탭에 반영한다. 반환: { added, updated, removed, lines[] }
@@ -1117,24 +1187,18 @@ function schoolLog_(lines) {
 }
 
 function schoolSync_(force) {
-  const url = props().getProperty("SCHOOL_URL");
-  if (!url) throw new Error("아직 학사 일정 시트를 연결하지 않았어요. [" + MENU + " → 학사 일정 연결하기] 를 먼저 해 주세요.");
+  const list = schoolSources_();
+  if (!list.length) throw new Error("아직 학사 일정 시트를 연결하지 않았어요. [" + MENU + " → 학사 일정 연결하기] 를 먼저 해 주세요.");
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(30000)) throw new Error("다른 가져오기가 진행 중이에요. 잠시 뒤 다시 해 주세요.");
   try {
-    // 구글 쪽이 잠깐 느려 'Drive 서비스 타임아웃' 같은 오류가 나면 잠시 뒤 한 번 더 시도한다.
-    let read;
-    try {
-      read = schoolRead_(schoolSource_(url));
-    } catch (err) {
-      Utilities.sleep(10000);
-      read = schoolRead_(schoolSource_(url));
-    }
-    // 원본을 하나도 못 읽었으면 (탭 구조가 바뀌었거나 비었으면) 캘린더를 건드리지 않는다.
-    if (!read.events.length) throw new Error("원본 '" + read.tab + "' 탭에서 일정을 하나도 읽지 못해 캘린더는 그대로 두었어요. 탭 모양(요일 머리글·날짜 칸)이 바뀌었는지 확인해 주세요.");
+    const read = schoolReadAll_(list);
+    schoolSaveSources_(list); // 시트 이름이 새로 확인됐으면 저장
     const r = schoolApply_(read.events, read.months, force || "");
     r.total = read.events.length;
     r.skipped = read.skipped;
+    r.failures = read.failures;
+    r.sources = list.length;
     return r;
   } finally {
     lock.releaseLock();
@@ -1142,7 +1206,8 @@ function schoolSync_(force) {
 }
 
 const schoolSummary_ = (r) =>
-  "추가 " + r.added + " · 바뀜 " + r.updated + " · 빠짐 " + r.removed + (r.merged ? " · 직접 적은 일정과 합침 " + r.merged : "") + (r.gone ? " · 직접 지워서 안 넣은 일정 " + r.gone : "") + " (원본 일정 " + r.total + "개" + (r.skipped ? ", 날짜를 못 읽어 건너뛴 줄 " + r.skipped + "개" : "") + ")";
+  "추가 " + r.added + " · 바뀜 " + r.updated + " · 빠짐 " + r.removed + (r.merged ? " · 직접 적은 일정과 합침 " + r.merged : "") + (r.gone ? " · 직접 지워서 안 넣은 일정 " + r.gone : "") + " (원본 시트 " + (r.sources || 1) + "개, 일정 " + r.total + "개" + (r.skipped ? ", 날짜를 못 읽어 건너뛴 줄 " + r.skipped + "개" : "") + ")" +
+  (r.failures && r.failures.length ? "\n\n못 읽은 시트가 있어서 이번에는 캘린더에서 빼는 일정 없이 넣고 고치기만 했어요:\n" + r.failures.join("\n") : "");
 
 function schoolInstallTrigger_() {
   ScriptApp.getProjectTriggers()
@@ -1157,7 +1222,8 @@ function schoolSyncTrigger() {
   const sheetUrl = SpreadsheetApp.getActive().getUrl();
   try {
     const r = schoolSync_();
-    props().deleteProperty("SCHOOL_FAILS");
+    if (r.failures.length) schoolFailed_(new Error("못 읽은 학사 일정 시트가 있어요:\n" + r.failures.join("\n")), to, sheetUrl);
+    else props().deleteProperty("SCHOOL_FAILS");
     if (!r.lines.length) return;
     const body = r.lines
       .slice(0, 50)
@@ -1170,24 +1236,28 @@ function schoolSyncTrigger() {
         "\n\n전체 기록: 시트의 '" + SCHOOL_LOG_SHEET + "' 탭\n" + sheetUrl,
     );
   } catch (err) {
-    // 잠깐의 구글 오류(타임아웃 등)는 다음 시간에 저절로 풀리므로, 3번(약 3시간) 연속 실패했을 때만 한 번 알린다.
-    const fails = Number(props().getProperty("SCHOOL_FAILS") || 0) + 1;
-    props().setProperty("SCHOOL_FAILS", String(fails));
-    if (fails !== 3) return;
-    MailApp.sendEmail(
-      to,
-      "[기윤실 앱] 학사 일정을 3시간째 가져오지 못하고 있어요",
-      err.message + "\n\n캘린더는 그대로 두었어요. 계속 실패하면 시트 메뉴 [" + MENU + " → 학사 일정 지금 가져오기]로 확인해 주세요.\n" + sheetUrl,
-    );
+    schoolFailed_(err, to, sheetUrl);
   }
+}
+
+// 잠깐의 구글 오류(타임아웃 등)는 다음 시간에 저절로 풀리므로, 3번(약 3시간) 연속 실패했을 때만 한 번 알린다.
+function schoolFailed_(err, to, sheetUrl) {
+  const fails = Number(props().getProperty("SCHOOL_FAILS") || 0) + 1;
+  props().setProperty("SCHOOL_FAILS", String(fails));
+  if (fails !== 3) return;
+  MailApp.sendEmail(
+    to,
+    "[기윤실 앱] 학사 일정을 3시간째 가져오지 못하고 있어요",
+    err.message + "\n\n캘린더에서 빼는 일정 없이 그대로 두었어요. 계속 실패하면 시트 메뉴 [" + MENU + " → 학사 일정 지금 가져오기]로 확인해 주세요.\n" + sheetUrl,
+  );
 }
 
 function menuSchoolConnect() {
   const ui = SpreadsheetApp.getUi();
-  const now = props().getProperty("SCHOOL_URL");
+  const list = schoolSources_();
   const r = ui.prompt(
     "학사 일정 연결하기",
-    (now ? "지금 연결된 주소:\n" + now + "\n\n" : "") +
+    (list.length ? "지금 연결된 시트 (계속 함께 가져와요):\n" + list.map(schoolSourceName_).join("\n") + "\n\n새로 더할 " : "") +
       "학사 일정이 있는 구글 시트에서 그 탭을 연 상태의 주소를 통째로 복사해 붙여넣어 주세요.\n(주소 끝의 gid=… 로 탭을 찾아요)",
     ui.ButtonSet.OK_CANCEL,
   );
@@ -1216,15 +1286,21 @@ function menuSchoolConnect() {
     "읽은 곳: " + read.headers.join(", ") + "\n\n" + ex +
       (read.events.length > 5 ? "\n…" : "") +
       (read.skipped ? "\n\n날짜를 못 읽어 건너뛴 줄: " + read.skipped + "개" : "") +
-      "\n\n'" + CAL_SHEET + "' 탭에 넣고, 앞으로 1시간마다 확인해서 바뀌면 반영하고 메일로 알려 드릴까요?",
+      "\n\n'" + CAL_SHEET + "' 탭에 넣고, 앞으로 1시간마다 확인해서 바뀌면 반영하고 메일로 알려 드릴까요?" +
+      (list.length ? "\n(지금 연결된 시트 " + list.length + "개도 계속 함께 가져와요)" : ""),
     ui.ButtonSet.YES_NO,
   );
   if (ok !== ui.Button.YES) return;
-  props().setProperty("SCHOOL_URL", url);
+  // 이미 연결된 시트면 주소만 바꾸고, 새 시트면 목록에 더한다.
+  const id = schoolIds_(url).id;
+  const same = list.findIndex((x) => (schoolIds_(x.url) || {}).id === id);
+  if (same >= 0) list[same] = { url: url, name: read.name };
+  else list.push({ url: url, name: read.name });
+  schoolSaveSources_(list);
   try {
     const res = schoolSync_();
     schoolInstallTrigger_();
-    ui.alert("연결했어요", schoolSummary_(res) + "\n\n이제 1시간마다 자동으로 확인해요. 바뀐 내용은 '" + SCHOOL_LOG_SHEET + "' 탭과 메일로 알려 드려요.", ui.ButtonSet.OK);
+    ui.alert("연결했어요", "연결된 시트:\n" + schoolSources_().map(schoolSourceName_).join("\n") + "\n\n" + schoolSummary_(res) + "\n\n이제 1시간마다 자동으로 확인해요. 바뀐 내용은 '" + SCHOOL_LOG_SHEET + "' 탭과 메일로 알려 드려요.", ui.ButtonSet.OK);
   } catch (err) {
     ui.alert(err.message);
   }
@@ -1301,4 +1377,44 @@ function ensureRows_(sh, need) {
   if (need <= max) return false;
   sh.insertRowsAfter(max, Math.max(need - max, 500));
   return true;
+}
+
+// 연결된 학사 일정 시트 하나를 뺀다. 그 시트에서만 온 앞으로의 일정은 다음 가져오기 때 캘린더에서 빠진다.
+function menuSchoolDisconnect() {
+  const ui = SpreadsheetApp.getUi();
+  const list = schoolSources_();
+  if (!list.length) {
+    ui.alert("연결된 학사 일정 시트가 없어요.");
+    return;
+  }
+  const r = ui.prompt("학사 일정 시트 연결 빼기", "연결된 시트:\n" + list.map(schoolSourceName_).join("\n") + "\n\n뺄 시트의 번호를 적어 주세요.", ui.ButtonSet.OK_CANCEL);
+  if (r.getSelectedButton() !== ui.Button.OK) return;
+  const n = parseInt(r.getResponseText(), 10);
+  if (!(n >= 1 && n <= list.length)) {
+    ui.alert("1부터 " + list.length + " 사이의 번호를 적어 주세요. (아무것도 바뀌지 않았어요)");
+    return;
+  }
+  const target = list[n - 1];
+  if (
+    ui.alert(
+      "정말 뺄까요?",
+      schoolSourceName_(target, n - 1) + "\n\n이 시트에서만 온 일정 중 앞으로 있을 일정은 캘린더에서 빠져요. (이미 지난 일정과 '직접 고침' 줄은 그대로 둬요)",
+      ui.ButtonSet.YES_NO,
+    ) !== ui.Button.YES
+  )
+    return;
+  list.splice(n - 1, 1);
+  schoolSaveSources_(list);
+  if (!list.length) {
+    ScriptApp.getProjectTriggers()
+      .filter((t) => t.getHandlerFunction() === SCHOOL_TRIGGER)
+      .forEach((t) => ScriptApp.deleteTrigger(t));
+    ui.alert("연결을 뺐어요. 연결된 시트가 없어서 자동 가져오기도 껐어요. 캘린더에 들어간 일정은 그대로 있어요.");
+    return;
+  }
+  try {
+    ui.alert("연결을 뺐어요", "남은 시트:\n" + list.map(schoolSourceName_).join("\n") + "\n\n" + schoolSummary_(schoolSync_()), ui.ButtonSet.OK);
+  } catch (err) {
+    ui.alert(err.message);
+  }
 }
