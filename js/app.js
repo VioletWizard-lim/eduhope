@@ -454,10 +454,13 @@ function prayerItem(p, i) {
 }
 
 // 신청 기간이면 '신청하기' 버튼
-const retreatApply = (r) =>
-  r.apply && safeUrl(r.apply.url) && (!r.apply.until || ymd(new Date()) <= r.apply.until)
-    ? `<a class="link-btn retreat-apply" href="${esc(safeUrl(r.apply.url))}" target="_blank" rel="noopener">${esc(r.apply.label)} ▶</a>`
+// 신청 링크: 설정 탭(r.apply.setting)에 값이 있으면 그 주소, 없으면 r.apply.url. 신청 기간이 지나면 버튼을 숨긴다.
+const retreatApply = (r) => {
+  const url = r.apply && safeUrl((r.apply.setting && setting(r.apply.setting)) || r.apply.url);
+  return url && (!r.apply.until || ymd(new Date()) <= r.apply.until)
+    ? `<a class="link-btn retreat-apply" href="${esc(url)}" target="_blank" rel="noopener">${esc(r.apply.label)} ▶</a>`
     : "";
+};
 
 function retreatItem(r, i) {
   const orig = safeUrl(r.url) ? `<a class="btn small orig-link" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">홈페이지에서 보기 ↗</a>` : "";
