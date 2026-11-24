@@ -50,7 +50,8 @@ export const RETREATS = [
   {
     title: "2027.1. 겨울수련회",
     url: page(7212),
-    apply: { label: "2027 겨울수련회 신청하기", url: "https://bit.ly/4puihVx", until: "2027-01-19" },
+    // 신청 링크. 시트 '설정' 탭에 "2027 겨울수련회 신청 링크" 값을 적으면 그 주소가 우선한다.
+    apply: { label: "2027 겨울수련회 신청하기", url: "https://bit.ly/4iKFXTx", setting: "2027 겨울수련회 신청 링크", until: "2027-01-19" },
     tone: "navy",
     badge: "기윤실교사모임 2027 겨울수련회",
     theme: "시대와 함께, 기윤실교사모임과 함께",
