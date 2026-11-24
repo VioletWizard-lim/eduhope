@@ -17,11 +17,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  # GitHub 기본 Pages 양식처럼 '올리기'와 '배포'를 두 단계로 나눈다.
+  # (한 단계에서 올리자마자 배포하면 GitHub 쪽에서 방금 올린 파일을 아직 못 찾아 실패하는 일이 있었다)
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - name: 배포할 파일만 모으기
@@ -32,5 +31,13 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
